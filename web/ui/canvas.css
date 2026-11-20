@@ -1,0 +1,325 @@
+/* canvas/timeline/overlay geometry: carried over from the old style.css so canvas behaviour is unchanged. */
+#imgView { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--stage); border-radius: 6px; overflow: hidden; }
+#imgBox { position: relative; flex: 1; min-height: 0; }
+#imgMain { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%;
+  background: repeating-conic-gradient(#969696 0% 25%, #cdcdcd 0% 50%) 50% / 16px 16px; }
+#imgCaption { text-align: center; }
+#imgResPanel .cands, #refGenPanel .cands div { position: relative; }
+#refGenPanel .secTitle { margin: 12px 0 5px; font-weight: 600; border-top: 1px solid var(--line); padding-top: 9px; cursor: help; }
+#refGenPanel .secTitle .sub { font-weight: 400; margin-left: 4px; }
+#imgResPanel .cands, #refGenPanel .cands .empty { grid-column: 1 / -1; color: var(--sub); font-size: 12px; padding: 6px 0; }
+#imgResPanel .cands, #refGenPanel .cands .use { position: absolute; right: 4px; bottom: 4px; display: flex; align-items: center; gap: 3px; font-size: 12px;
+  background: rgba(0,0,0,.65); color: #fff; border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+#imgResPanel .cands, #refGenPanel .cands .use input { margin: 0; cursor: pointer; }
+#imgResPanel .cands, #refGenPanel .cands .use.on { background: #2a7d46; }
+#imgResPanel .cands, #refGenPanel .cands img.base { background: repeating-conic-gradient(#969696 0% 25%, #cdcdcd 0% 50%) 50% / 12px 12px; }
+#imgResPanel .cands, #refGenPanel .cands .tick { position: absolute; right: 6px; top: 4px; color: #4cd17a; font-weight: 700; text-shadow: 0 0 3px #000; }
+#imgResPanel .cands, #refGenPanel .cands .refdel { position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px;
+  background: rgba(0,0,0,.65); color: #fff; font-size: 15px; line-height: 22px; cursor: pointer; }
+#imgResPanel .cands, #refGenPanel .cands .refdel:hover { background: #c0392b; }
+#imgResPanel .cands, #refGenPanel .cands .cap { position: absolute; left: 6px; bottom: 4px; font-size: 11px; color: #fff; text-shadow: 0 0 3px #000; }
+.warn { color: #ffc93c; border: 1px solid rgba(255,201,60,.4); border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
+.warn button { margin-top: 6px; }
+#resView { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--stage); border-radius: 6px; overflow: hidden; }
+#resBox { position: relative; flex: 1; min-height: 0; }
+#resVideo { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; background: #000; }
+#resCaption { text-align: center; }
+#resList { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.resItem { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; cursor: pointer; display: flex; flex-direction: column; }
+.resItem:hover { background: var(--panel2); }
+.resItem.on { border-color: #4c8dff; background: var(--panel2); }
+.resItem .sub { font-size: 11px; }
+#stillShow { position: absolute; pointer-events: none; z-index: 4; object-fit: fill; }
+#stillShow[hidden] { display: none; }
+/* 首帧 / 尾帧里：这一项改过 = 只存进这张图（单图覆盖） */
+:is(#maskPanel, #mattePanel) .ovrTag { display: none; margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 3px; background: #6b4bd6; color: #fff;
+  border: 0; cursor: pointer; }
+body[data-tab="still"] :is(#maskPanel, #mattePanel) .mctl.ovr .ovrTag { display: inline-block; }
+body[data-tab="still"] :is(#maskPanel, #mattePanel) .mctl.ovr { box-shadow: inset 3px 0 0 #6b4bd6; }
+#maskPanel .rgRec { margin-left: 6px; }
+#imgCands .rc.stale { opacity: .55; }
+#imgCands .rc .stalebtn { position: absolute; left: 6px; bottom: 6px; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #b7791f; color: #fff; }
+#imgModelRow select { min-width: 0; }
+.seed-row { align-items: center; gap: 6px; margin: 6px 0; }
+.seed-row input { min-width: 0; }
+
+/* 进度条（ComfyUI 每一步的进度） */
+#progBox { margin-bottom: 6px; }
+#progBox[hidden] { display: none; }
+.pbar { height: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+#progFill { height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+#progFill.indet { width: 30% !important; animation: indet 1.2s ease-in-out infinite; }
+@keyframes indet { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+#progText { margin-top: 4px; font-size: 12px; }
+/* 合成的步骤条：✓ 完成 · ▶ 正在做 · ○ 还没做 */
+#stepList { margin: 0 0 8px; padding: 0; list-style: none; font-size: 12px; }
+#stepList[hidden] { display: none; }
+#stepList li { padding: 2px 0; color: var(--sub); }
+#stepList li.done { color: #4cd17a; }
+#stepList li.now { color: var(--text); font-weight: 600; }
+#stepList li.now::before { content: "▶ "; color: var(--accent); }
+#stepList li.done::before { content: "✓ "; }
+#stepList li.todo::before { content: "○ "; }
+#stepList li.skip::before { content: "– "; }
+/* H3 LoRA */
+#loraBox { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.lora-head { margin-bottom: 4px; }
+.lora-row { display: grid; grid-template-columns: 1fr 64px 26px; gap: 4px; margin-bottom: 4px; }
+.lora-row select { min-width: 0; }
+.lora-row button { padding: 0; }
+
+/* 重画范围叠加层（M） */
+#zoneCv { position: absolute; pointer-events: none; }
+#zoneLegend { position: absolute; left: 10px; bottom: 10px; z-index: 5; background: var(--glass); border: 1px solid var(--glass-line); color: var(--glass-text);
+  border-radius: 6px; padding: 5px 10px; display: flex; align-items: center; gap: 6px; font-size: 12px; pointer-events: none; }
+#zoneLegend[hidden] { display: none; }
+.zl { display: inline-block; width: 16px; height: 12px; border-radius: 2px; margin-left: 6px; }
+.zl.full { background: repeating-linear-gradient(45deg, #e24b4a 0 3px, rgba(226,75,74,.25) 3px 7px); }
+.zl.part { background: radial-gradient(#378add 1.3px, rgba(55,138,221,.38) 1.6px) 0 0 / 6px 6px; border: 1px solid #378add; }
+.zl.body { background: radial-gradient(#28d25a 1.1px, transparent 1.4px) 0 0 / 6px 6px; border: 1px solid rgba(40,210,90,.5); }
+.zl.trans { background: radial-gradient(#f0a0a0 1.3px, rgba(240,160,160,.35) 1.6px) 0 0 / 6px 6px; border: 1px solid #f0a0a0; }
+.trans-row { display: flex; align-items: center; gap: 8px; }
+.trans-row input { flex: 1; }
+.zl.contact { background: repeating-linear-gradient(-45deg, #ff9600 0 3px, rgba(255,150,0,.28) 3px 6px); }
+#zoneBtn.on { background: var(--accent-weak) !important; border-color: var(--accent) !important; }
+
+/* 画面 */
+#viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px; gap: 8px; }
+#stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--stage); border-radius: 6px; overflow: hidden; user-select: none; box-shadow: inset 0 0 0 1px var(--stage-edge); }
+#stage img { position: absolute; max-width: none; max-height: none; pointer-events: none; -webkit-user-drag: none; }
+#ov { position: absolute; pointer-events: none; }
+#stage.grab, #stage.grab * { cursor: grab !important; }
+#stage.panning, #stage.panning * { cursor: grabbing !important; }
+#frameSvg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+#frameSvg .fdim { fill: rgba(8, 9, 11, .40); }
+#frameSvg .videdge { fill: none; stroke: rgba(255,255,255,.35); stroke-width: 1; stroke-dasharray: 5 4; }
+#frameSvg .fborder { fill: none; stroke: rgba(255,255,255,.85); stroke-width: 1; }
+#frameSvg .fborder.on { stroke: #ffb02e; stroke-width: 1.5; }
+#frameSvg .fhit { fill: none; stroke: transparent; stroke-width: 10; pointer-events: stroke; cursor: move; }
+#frameSvg .third { stroke: rgba(255,176,46,.35); stroke-width: 1; }
+#frameSvg .flabel { fill: #cfd3da; font-size: 12px; pointer-events: all; cursor: pointer; user-select: none; }
+#frameSvg .flabel.on { fill: #ffb02e; }
+#frameSvg .fh { fill: #fff; stroke: #ffb02e; stroke-width: 1.2; pointer-events: all; }
+#zoomBar { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 2px; align-items: center; background: var(--glass); border: 1px solid var(--glass-line); color: var(--glass-text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 2px; z-index: 3; }
+#zoomBar button { width: 26px; height: 24px; padding: 0; background: none; border-color: transparent; color: var(--glass-sub); }
+#zoomBar button:hover { background: var(--glass-2); color: var(--glass-text); }
+#zoomBar select { background: none; border-color: transparent; padding: 2px 4px; width: 74px; color: var(--glass-text); }
+/* 画幅：比例 + 编辑一行；X / Y / 宽 / 高两列，标签紧贴输入框；还原 / 居中 / 去黑边带字；导出一行 */
+#framePanel .frame-top { display: flex; align-items: center; gap: 8px; }
+#framePanel .frame-top label { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+#framePanel .frame-top select { flex: 1; min-width: 0; }
+#framePanel .grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 10px; }
+#framePanel .grid4 label { display: grid; grid-template-columns: 16px 1fr; align-items: center; gap: 6px; color: var(--sub); }
+#framePanel .grid4 input { width: 100%; min-width: 0; }
+#framePanel .frame-btns { display: flex; gap: 6px; margin-top: 10px; }
+#framePanel .frame-btns button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 5px 6px; white-space: nowrap; }
+#framePanel .frame-btns select { flex: none; width: 92px; }
+#framePanel .frame-btns .grow { flex: 1 !important; }
+#framePanel > .chk { margin-top: 10px; }
+#layers, #gizmo, #bgChecker, #base { position: absolute; }
+#bgChecker, #frameChecker { position: absolute; background: repeating-conic-gradient(#cdcdcd 0 25%, #969696 0 50%) 0 0 / 16px 16px; }
+#layers canvas.holes { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#layers { pointer-events: none; }
+#layers .lyr { position: absolute; left: 0; top: 0; width: 100%; height: 100%; max-width: none; max-height: none; will-change: transform; }
+#layers .lyr.sel { filter: drop-shadow(0 0 0.6px var(--accent)) drop-shadow(0 0 0.6px var(--accent)) drop-shadow(0 0 1px var(--accent)); }
+#layers .lyr.hover { filter: drop-shadow(0 0 0.6px rgba(45,140,255,.7)) drop-shadow(0 0 0.6px rgba(45,140,255,.7)); }
+#gizmo { overflow: visible; cursor: default; }
+#gizmo .box { fill: none; stroke: var(--accent); stroke-width: 1; }
+#gizmo .hoverbox { fill: none; stroke: rgba(45,140,255,.55); stroke-width: 1; stroke-dasharray: 4 3; }
+#gizmo .h { fill: #fff; stroke: var(--accent); stroke-width: 1; }
+#gizmo .rot { fill: #fff; stroke: var(--accent); stroke-width: 1.2; cursor: grab; }
+#gizmo .stem { stroke: var(--accent); stroke-width: 1; }
+#gizmo .pivot { fill: none; stroke: var(--accent); stroke-width: 1; }
+#gizmo .locked { stroke: #ffc93c; }
+#gizmo .xspan { stroke: #ff9a3c; stroke-width: 4; stroke-linecap: round; opacity: .85; pointer-events: none; }
+#gizmo .xs { fill: #fff; stroke: #ff9a3c; stroke-width: 2; }
+#gizmo .xs:hover { fill: #ffc07a; }
+#gizmo .xsa { fill: #ff9a3c; stroke: #fff; stroke-width: 1; }
+#gizmo .xsa:hover { fill: #ffc07a; }
+#gizmo .extbox { fill: none; stroke: #ff9a3c; stroke-width: 1.2; stroke-dasharray: 6 4; pointer-events: none; }
+#gizmo .xh { fill: #ff9a3c; stroke: #fff; stroke-width: 1; }
+#gizmo .xh:hover { fill: #ffc07a; }
+#empty { color: var(--sub); }
+#transport { display: flex; align-items: center; gap: 12px; }
+#playBtn { width: 40px; }
+#cacheBtn { font-size: 12px; }
+#loading { color: #ffc93c; font-size: 12px; }
+.hint, .sub { color: var(--sub); font-size: 12px; font-weight: normal; }
+
+#timeline { background: var(--panel); border-radius: 6px; padding: 8px; }
+#track { position: relative; height: 26px; background: #2a2d33; border-radius: 4px; cursor: pointer; }
+#range { position: absolute; top: 0; bottom: 0; background: rgba(45,140,255,.22); border: 1px solid var(--accent); border-radius: 4px; }
+.handle { position: absolute; top: -2px; bottom: -2px; width: 8px; background: var(--accent); border-radius: 3px; cursor: ew-resize; }
+.handle[data-h=start] { left: -4px; } .handle[data-h=end] { right: -4px; }
+#playhead { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #fff; pointer-events: none; }
+/* 图层条：一行一个图层（点一下选中），区域高度可以拖 #barsGrip 调，放不下就滚动 */
+#objBars { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; height: var(--bars-h, 76px); overflow-y: auto; padding: 3px 4px 3px 0; }
+#objBars:empty { display: none; }
+.bar { position: relative; height: 12px; flex: none; cursor: pointer; }
+.bar div { position: absolute; top: 0; bottom: 0; border-radius: 3px; opacity: .75; }
+.bar:hover div { opacity: 1; }
+.bar.sel div { opacity: 1; outline: 2px solid #fff; outline-offset: 1px; }
+#barsGrip { position: absolute; left: 50%; top: -3px; width: 48px; height: 8px; margin-left: -24px; border-radius: 4px; cursor: ns-resize; z-index: 2; }
+#barsGrip::before { content: ""; position: absolute; left: 12px; right: 12px; top: 3px; height: 2px; border-radius: 1px; background: var(--sub); opacity: .5; }
+#barsGrip:hover::before { opacity: 1; background: var(--accent); }
+
+/* 右侧面板 */
+aside { border-left: 1px solid var(--line); overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.panel { background: var(--panel); border-radius: 6px; padding: 10px; }
+.panel h3 { margin: 0 0 8px; font-size: 13px; }
+.panel label { display: block; margin-top: 6px; color: var(--sub); }
+.panel label input[type=number] { width: 70px; }
+.row { display: flex; gap: 6px; } .row input { flex: 1; min-width: 0; }
+.tabs { display: flex; gap: 4px; } .tabs button { flex: 1; }
+
+/* 图层列表 */
+#layerList { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.layer { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: var(--panel); border-bottom: 1px solid var(--line); cursor: pointer; }
+.layer:last-child { border-bottom: none; }
+.layer:hover { background: var(--panel2); }
+.layer.sel { background: var(--accent-weak); box-shadow: inset 3px 0 0 var(--accent); }
+.layer.dragover { box-shadow: inset 0 2px 0 var(--accent); }
+.layer.hidden .thumb, .layer.hidden .nm { opacity: .4; }
+.layer .ic { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 3px; color: var(--sub); font-size: 13px; flex: none; }
+.layer .ic:hover { background: #33363c; color: var(--text); }
+.layer .ic.off { opacity: .35; }
+.layer .thumb { width: 40px; height: 32px; flex: none; border-radius: 3px; display: grid; place-items: center; overflow: hidden;
+  background: repeating-conic-gradient(#3a3d43 0 25%, #2c2f34 0 50%) 0 0 / 8px 8px; }
+.layer .thumb img { max-width: 100%; max-height: 100%; }
+.layer .meta { flex: 1; min-width: 0; }
+.layer .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer .nm input { width: 100%; padding: 1px 4px; }
+.layer .rg { color: var(--sub); font-size: 11px; display: flex; align-items: center; gap: 5px; }
+.layer .sw { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.layer .badge { font-size: 10px; color: var(--accent); }
+.layer.bg { cursor: default; }
+.layer.bg .thumb { background: #000; }
+.layer-actions { display: flex; gap: 4px; margin-top: 6px; }
+.layer-actions button { padding: 3px 8px; }
+.layer-actions .grow { flex: 1; }
+.empty-note { color: var(--sub); padding: 8px; }
+
+/* 属性 */
+#propPanel .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+#propPanel .grid label { display: flex; align-items: center; justify-content: space-between; }
+#propPanel .lock-ratio { justify-content: flex-start !important; gap: 6px; }
+#propPanel .op, #maskPanel .op { display: flex; align-items: center; gap: 8px; }
+#propPanel .op input, #maskPanel .op input { flex: 1; }
+#propPanel.disabled { opacity: .45; }
+#propPanel.disabled > :not(h3) { pointer-events: none; }
+/* 蒙版面板没选图层：图层自己的项变灰不能点；「整体过渡（所有图层）」对整个画面生效，照常能调 */
+#maskPanel.disabled > :not(h3):not(.rg-video):not(#msecShape) { opacity: .45; pointer-events: none; }
+
+.ver { display: flex; align-items: center; gap: 8px; padding: 6px; margin-bottom: 4px; border: 1px solid var(--line-soft); border-radius: 9px; cursor: pointer; color: var(--text); }
+.ver:hover { background: var(--panel2); }
+.ver.cur { background: var(--accent-weak); border-color: var(--accent); cursor: default; }
+.ver-thumb { flex: none; width: 72px; height: 40px; object-fit: cover; border-radius: 5px; background: var(--panel3); }
+.ver-txt { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.ver-txt b { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.ver-cur { font-style: normal; font-size: 10px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; }
+.ver-txt small { flex-basis: 100%; font-size: 11px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ver .ver-act { flex: none; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; background: none; border: 0; border-radius: 6px; color: var(--sub); cursor: pointer; opacity: 0; }
+.ver:hover .ver-act, .ver .ver-act:focus-visible { opacity: 1; }
+.ver .ver-act:hover { background: var(--panel3); color: var(--text); }
+.ver .version-delete:hover { color: #fff; background: var(--danger); }
+.ver .ver-act .ico { width: 16px; height: 16px; }
+
+/* ── 修抠图 / 空区形状 / 对比 / 画框裁剪：新外壳漏搬的旧规则（旧 app/static/style.css:329-351、376-391、452-454、485-498） ── */
+#refineCv { position: absolute; opacity: .5; pointer-events: none; }
+#brushCursor { position: absolute; border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6); border-radius: 50%; pointer-events: none; z-index: 4; }
+#brushCursor.erase { border-style: dashed; }
+#stage.refining { cursor: none; }
+#stage.refining.rf-wand { cursor: crosshair; }
+#stage.refining.rf-move { cursor: move; }
+
+/* 画面上的浮动小工具条：修抠图 / 空区形状都用这一套 */
+.ui-bar { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 6; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
+  width: max-content; max-width: calc(100% - 20px); padding: 5px 8px; background: var(--glass); border: 1px solid var(--glass-line); border-radius: 10px;
+  color: var(--glass-text); white-space: nowrap; box-shadow: 0 8px 24px var(--glass-shadow); }
+.ui-bar[hidden], .ui-bar [hidden] { display: none; }
+.ui-bar button { width: 26px; height: 24px; padding: 0; background: none; border-color: transparent; color: var(--glass-sub); }
+.ui-bar button:hover { background: var(--glass-2); color: var(--glass-text); }
+.ui-bar button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ui-bar .primary-sm { width: auto; padding: 3px 10px; background: var(--accent-grad); border-color: transparent; color: #fff; }
+.ui-bar label { display: flex; align-items: center; gap: 4px; color: var(--glass-sub); font-size: 12px; }
+.ui-bar input[type="range"] { width: 82px; }
+.ui-bar .bar-title { font-size: 12px; color: var(--glass-sub); }
+.ui-bar .bar-title b { color: var(--glass-text); font-weight: 600; }
+#refineBar { z-index: 5; }
+#shapeBar { z-index: 6; }
+#shapeBar .sub { font-size: 12px; }
+
+/* 空区形状：画在上面的透明画布 + 十字光标 */
+#shapeCv { position: absolute; z-index: 4; pointer-events: none; }
+#shapeCv[hidden] { display: none; }
+#stage.shaping { cursor: crosshair; }
+
+/* 对比：整个画面容器贴住 stage，分割线可拖 */
+#cmpWrap { position: absolute; left: 0; top: 0; overflow: hidden; pointer-events: none; }
+#cmpCv { display: block; }
+#cmpLine { position: absolute; z-index: 5; width: 13px; margin-left: -6px; cursor: col-resize; touch-action: none; }
+#cmpLine i { position: absolute; left: 6px; top: 0; bottom: 0; width: 1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
+#cmpLine::after { content: ""; position: absolute; left: 2px; top: 50%; width: 9px; height: 26px; margin-top: -13px; border-radius: 3px; background: rgba(255,255,255,.92); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+#cmpLine[hidden] { display: none; }
+#cmpTags { position: absolute; z-index: 5; display: flex; justify-content: space-between; pointer-events: none; font-size: 12px; }
+#cmpTags[hidden] { display: none; }
+#cmpTags span { background: rgba(20,21,24,.72); color: #dfe3e8; border: 1px solid rgba(255,255,255,.18); border-radius: 5px; padding: 2px 8px; }
+#cmpTags span:last-child { color: #9ecbff; }
+
+/* 画框超过原片（黑边）裁剪；对比时只显示分割线左边 */
+/* 去黑边：原画面的黑边行不显示。图层不裁：移动 / 放大后伸出原片（扩大的画框里）的部分要看得见（图层蒙版本来就不含黑边） */
+#base, #ov, #refineCv, #maskViewCv { clip-path: inset(var(--ct, 0px) 0 var(--cb, 0px) 0); }
+body.cmp-on #base { clip-path: inset(var(--ct, 0px) 0 var(--cb, 0px) var(--cmpsplit, 50%)); }
+body.cmp-on #layers { clip-path: inset(-100000px -100000px -100000px var(--cmpsplit, 50%)); }
+#base.pc-wide { clip-path: none; }                     /* 整段缓存帧：黑边在合成时已经去掉，帧可能比原片大（画框扩大） */
+body.cmp-on #ov, body.cmp-on #zoneCv, body.cmp-on #zoneLegend,
+body.cmp-side #ov, body.cmp-side #zoneCv, body.cmp-side #zoneLegend { display: none; }
+#zoomBar #cmpBtn, #zoomBar #cmpSideBtn { width: 26px; padding: 0; }
+#zoomBar #cmpBtn.on, #zoomBar #cmpSideBtn.on { color: #9ecbff; }
+
+/* 加载提示：别再是一段裸文字压在画面上 */
+#previewStatus { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); z-index: 6; max-width: 80%; padding: 5px 12px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--glass-line); color: var(--glass-text); font-size: 12px; pointer-events: none; }
+#previewStatus[hidden] { display: none; }
+#loading { display: none; }   /* 加载提示只留画面里的胶囊，transport 里不再重复一份 */
+
+/* 蒙版的色块图例 */
+#maskPanel .sw { width: 12px; height: 12px; border-radius: 2px; flex: none; }
+#maskPanel .sw-layer { border: 1.5px solid var(--accent); }
+#maskPanel .sw-full { background: repeating-linear-gradient(45deg, #e24b4a 0 2px, transparent 2px 5px); border: 1px solid #e24b4a; }
+
+/* 时间轴空区两端的拖动块 + 空区图案 */
+#objBars .bh { position: absolute; top: -3px; bottom: -3px; width: 8px; background: #fff; border: 1px solid #333; border-radius: 2px; cursor: ew-resize; }
+#objBars .bh[data-e="start"] { left: -4px; }
+#objBars .bh[data-e="end"] { right: -4px; }
+/* 蒙版类的色条（空区蒙版 / 背景预填 / 保护蒙版 / 向外延伸 / 主体保护蒙版）：仍是图层自己的颜色，加斜纹区分 */
+#objBars .shapebar .seg { background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.38) 0 3px, transparent 3px 7px) !important; }   /* 行内 background 简写会把它清掉 */
+.thumb.grid { background: repeating-conic-gradient(#cdcdcd 0 25%, #969696 0 50%) 0 0 / 10px 10px; }
+.layer .part-add { flex: none; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; }
+.layer.child-layer { position: relative; margin-left: 28px; overflow: visible; }
+.layer.child-layer::before { content: ""; position: absolute; left: -16px; top: -8px; width: 12px; height: calc(50% + 8px); border-left: 1px solid #777; border-bottom: 1px solid #777; pointer-events: none; }
+#panoBtn { width: 100%; margin-top: 8px; }
+#imgModeSw { display: flex; overflow: hidden; margin: 4px 0 8px; border: 1px solid var(--line); border-radius: 7px; }
+#imgModeSw button { flex: 1; padding: 6px 4px; border: 0; border-radius: 0; background: transparent; }
+#imgModeSw button.on { background: var(--accent); color: #fff; }
+#selBar { max-width: calc(100% - 12px); flex-wrap: wrap; }
+
+/* 图片结果：和输入图对比（08-imagetabs.js syncImgCmp；位置按 #imgMain 实际显示的矩形算） */
+#imgCmp { position: absolute; object-fit: fill; pointer-events: none; z-index: 2; }
+#imgCmp[hidden], #imgCmpLine[hidden], #imgCmpTags[hidden], #imgCmpBtn[hidden] { display: none; }
+#imgCmpLine { position: absolute; z-index: 3; width: 13px; margin-left: -6px; cursor: col-resize; touch-action: none; }
+#imgCmpLine i { position: absolute; left: 6px; top: 0; bottom: 0; width: 1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
+#imgCmpLine::after { content: ""; position: absolute; left: 2px; top: 50%; width: 9px; height: 26px; margin-top: -13px; border-radius: 3px; background: rgba(255,255,255,.92); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+#imgCmpTags { position: absolute; z-index: 3; display: flex; justify-content: space-between; align-items: flex-start; padding: 6px; pointer-events: none; box-sizing: border-box; }
+#imgCmpTags span { padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; }
+#imgCmpBtn { position: absolute; z-index: 4; right: 8px; bottom: 8px; width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 1px solid var(--glass-line, rgba(255,255,255,.2));
+  background: var(--glass, rgba(30,32,36,.75)); color: var(--glass-text, #fff); display: grid; place-items: center; cursor: pointer; }
+#imgCmpBtn.on { color: #9ecbff; border-color: #9ecbff; }
+#imgCmpBtn svg { width: 18px; height: 18px; }
+body.img-cmp #imgBox { cursor: col-resize; }
+
+/* 时间轴色条上写图层名（放不下就截断） */
+#objBars .seg { overflow: visible; }
+#objBars .bar-nm { position: absolute; left: 5px; right: 5px; top: 0; height: 12px; line-height: 12px; font-size: 9.5px; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; text-shadow: 0 0 2px rgba(0,0,0,.8); }

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="199 195 856 920" fill="none">
+  <defs>
+    <linearGradient id="rfTop" x1="199" y1="0" x2="835" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0048ff"/><stop offset="1" stop-color="#00f6ff"/></linearGradient>
+    <linearGradient id="rfLeft" x1="0" y1="290" x2="0" y2="1115" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0048ff"/><stop offset="1" stop-color="#a800ff"/></linearGradient>
+    <linearGradient id="rfBot" x1="199" y1="0" x2="564" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#a800ff"/><stop offset="1" stop-color="#008cff"/></linearGradient>
+  </defs>
+  <g>
+    <path fill="url(#rfLeft)" d="M199 290h112v825H199z"/>
+    <path fill="url(#rfTop)" d="M311 290h524v105H311z"/>
+    <path fill="url(#rfBot)" d="M311 1010h253v105H311z"/>
+    <path fill="#fff" d="M413 500h347c110 0 183 100 183 215 0 95-63 170-143 195l165 205H760L508 810h207c45 0 80-40 80-90s-35-80-80-80H413z"/>
+    <path fill="#00f6ff" d="M897 195h158v160H897z"/>
+  </g>
+</svg>

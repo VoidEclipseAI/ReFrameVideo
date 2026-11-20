@@ -1,0 +1,320 @@
+{
+ "1": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "minimax_h3_ref2va_int8_convrot.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "90": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "model": [
+    "1",
+    0
+   ],
+   "lora_name": "pika_h3_flex_ref2va_v1_bf16.safetensors",
+   "strength_model": 1.0
+  }
+ },
+ "91": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "model": [
+    "90",
+    0
+   ],
+   "lora_name": "ReFrameVideo-H3-LoRA-v1.safetensors",
+   "strength_model": 1.0
+  }
+ },
+ "2": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+   "type": "minimax",
+   "device": "default"
+  }
+ },
+ "3": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+  }
+ },
+ "4": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+  }
+ },
+ "5": {
+  "class_type": "LoadVideo",
+  "inputs": {
+   "file": "rough_cut.mp4"
+  }
+ },
+ "6": {
+  "class_type": "GetVideoComponents",
+  "inputs": {
+   "video": [
+    "5",
+    0
+   ]
+  }
+ },
+ "7": {
+  "class_type": "LoadVideo",
+  "inputs": {
+   "file": "mask.mov"
+  }
+ },
+ "8": {
+  "class_type": "GetVideoComponents",
+  "inputs": {
+   "video": [
+    "7",
+    0
+   ]
+  }
+ },
+ "9": {
+  "class_type": "ImageToMask",
+  "inputs": {
+   "image": [
+    "8",
+    0
+   ],
+   "channel": "red"
+  }
+ },
+ "41": {
+  "class_type": "GetImageSize",
+  "inputs": {
+   "image": [
+    "6",
+    0
+   ]
+  }
+ },
+ "10": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "6",
+    0
+   ],
+   "vae": [
+    "3",
+    0
+   ]
+  }
+ },
+ "42": {
+  "class_type": "ReframeH3InpaintMask",
+  "inputs": {
+   "samples": [
+    "10",
+    0
+   ],
+   "vae": [
+    "3",
+    0
+   ],
+   "redraw_mask": [
+    "9",
+    0
+   ],
+   "conflict": "redraw"
+  }
+ },
+ "30": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "picture_1.png"
+  }
+ },
+ "50": {
+  "class_type": "LoadVideo",
+  "inputs": {
+   "file": "video1_guide.mp4"
+  }
+ },
+ "60": {
+  "class_type": "GetVideoComponents",
+  "inputs": {
+   "video": [
+    "50",
+    0
+   ]
+  }
+ },
+ "12": {
+  "class_type": "MiniMaxH3ReferenceToVideo",
+  "inputs": {
+   "clip": [
+    "2",
+    0
+   ],
+   "vae": [
+    "3",
+    0
+   ],
+   "audio_vae": [
+    "4",
+    0
+   ],
+   "prompt": "subject_definitions:\n<Video 1> is a rough composite of this exact shot: the people in it, their size, position and movement are already correct and are kept as they are. Its flat grey areas are only missing pixels, not objects or people.\n<Picture 1> is the first frame of [Shot 1], with the grey areas already filled in.\n<Subject 1> is the person on the right side of the frame, as shown in <Picture 1>.\n\nsummary:\n[video editing + keyframe completion] A static shot of the person, exactly as laid out in <Video 1>. The shot begins from <Picture 1>. Only the grey areas of <Video 1> are filled in: the grey area in the centre of the frame is the wooden desk with papers and lamp and the grey area on the right side of the frame is the wooden desk surface and bookshelf. There is only one person in the foreground.\n\nretention_analysis:\n<Video 1> (the shot itself): fully_preserved - every person, their size, position and movement stay exactly as in <Video 1>; only its grey areas are filled in.\n<Picture 1> ([Shot 1] first frame): fully_preserved - the shot opens on this frame.\n<Subject 1> (appears in [Shot 1]): fully_preserved - same face, hair and clothing throughout; pose, gestures and motion exactly as in <Video 1>, frame by frame.\n\ndetailed_description:\n[Shot 1] A fixed camera frames the shot exactly as in <Video 1>. <Subject 1> stays where and as large as in <Video 1> in every frame, moving as in <Video 1>. The grey area in the centre of the frame is the wooden desk with papers and lamp and the grey area on the right side of the frame is the wooden desk surface and bookshelf. The filled areas contain nothing else: no other person, no figure, no silhouette, no shadow, no out-of-focus shape in the foreground.\n\noverall_soundscape:\nN/A\n\nnon_diegetic_music:\nN/A",
+   "width": [
+    "41",
+    0
+   ],
+   "height": [
+    "41",
+    1
+   ],
+   "length": 124,
+   "ref_image_size": "match",
+   "ref_images.ref_image_0": [
+    "30",
+    0
+   ],
+   "ref_videos.ref_video_0": [
+    "60",
+    0
+   ]
+  }
+ },
+ "13": {
+  "class_type": "LTXVSeparateAVLatent",
+  "inputs": {
+   "av_latent": [
+    "12",
+    1
+   ]
+  }
+ },
+ "14": {
+  "class_type": "LTXVConcatAVLatent",
+  "inputs": {
+   "video_latent": [
+    "42",
+    0
+   ],
+   "audio_latent": [
+    "13",
+    1
+   ]
+  }
+ },
+ "15": {
+  "class_type": "RandomNoise",
+  "inputs": {
+   "noise_seed": 42
+  }
+ },
+ "16": {
+  "class_type": "BasicGuider",
+  "inputs": {
+   "model": [
+    "91",
+    0
+   ],
+   "conditioning": [
+    "12",
+    0
+   ]
+  }
+ },
+ "17": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "res_multistep"
+  }
+ },
+ "18": {
+  "class_type": "BasicScheduler",
+  "inputs": {
+   "model": [
+    "91",
+    0
+   ],
+   "scheduler": "simple",
+   "steps": 6,
+   "denoise": 1
+  }
+ },
+ "19": {
+  "class_type": "SamplerCustomAdvanced",
+  "inputs": {
+   "noise": [
+    "15",
+    0
+   ],
+   "guider": [
+    "16",
+    0
+   ],
+   "sampler": [
+    "17",
+    0
+   ],
+   "sigmas": [
+    "18",
+    0
+   ],
+   "latent_image": [
+    "14",
+    0
+   ]
+  }
+ },
+ "20": {
+  "class_type": "LTXVSeparateAVLatent",
+  "inputs": {
+   "av_latent": [
+    "19",
+    0
+   ]
+  }
+ },
+ "21": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "20",
+    0
+   ],
+   "vae": [
+    "3",
+    0
+   ]
+  }
+ },
+ "22": {
+  "class_type": "CreateVideo",
+  "inputs": {
+   "images": [
+    "21",
+    0
+   ],
+   "fps": 24.0,
+   "bit_depth": "auto",
+   "color_space": "sRGB",
+   "codec": "none"
+  }
+ },
+ "23": {
+  "class_type": "SaveVideo",
+  "inputs": {
+   "video": [
+    "22",
+    0
+   ],
+   "filename_prefix": "videops/inpaint",
+   "format": "auto",
+   "codec": "auto",
+   "format.codec": "auto"
+  }
+ }
+}

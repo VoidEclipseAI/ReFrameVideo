@@ -1,0 +1,27 @@
+# 你的数据和设置：不上传
+projects/
+app_settings.json
+*.local.json
+workflows/**/*.json
+!workflows/ReFrameVideo_H3_example_workflow_api.json
+# 第三方授权的提示词（第一次用时下载，见 engine.h3pe_task）
+app/prompts/third_party/
+
+# 模型、媒体、生成产物
+*.safetensors
+*.ckpt
+*.mp4
+*.mov
+web/screenshots/
+
+# Python / 系统
+__pycache__/
+*.pyc
+.venv/
+*.log
+temp/
+.DS_Store
+Thumbs.db
+
+# 本机素材（有版权风险、太大）
+asset/

@@ -1,0 +1,99 @@
+/* 设计变量：跟随系统深浅色；画布永远深色，浮动条（选中浮窗 / 缩放条 / 图例 / 子标签）跟着主题走。 */
+:root {
+  color-scheme: light dark;
+  --bg: #f2f3f6;
+  --bg-soft: #e9ebef;
+  --panel: #ffffff;
+  --panel2: #f1f3f6;
+  --panel3: #e5e8ed;
+  --line: #dcdfe5;
+  --line-soft: #e8eaef;
+  --text: #191b1f;
+  --sub: #6b7280;
+  --accent: #2563ff;       /* 主题色 = logo 的蓝 */
+  --accent-weak: rgba(37, 99, 255, .12);
+  --accent-grad: linear-gradient(100deg, #2563ff, #8b2cff);   /* 主按钮：logo 的蓝 → 紫 */
+  --danger: #e5484d;
+  --ok: #1f9d55;
+  --warn: #b7791f;
+
+  /* 画布永远是深的；浮动条的浅色版在这里 */
+  --stage: #30373f;        /* 舞台底色：比电影黑边（#000）亮一档，画框边界才看得清 */
+  --stage-edge: rgba(255, 255, 255, .13);
+  --glass: rgba(255, 255, 255, .9);
+  --glass-2: rgba(233, 236, 241, .95);
+  --glass-line: rgba(15, 23, 42, .14);
+  --glass-text: #191b1f;
+  --glass-sub: #5b6472;
+  --glass-shadow: rgba(10, 14, 22, .22);
+  /* 压在画面（永远深）上的字：不跟主题 */
+  --on-dark: #f2f3f5;
+  --on-dark-sub: #a7adb8;
+
+  --radius-s: 6px;
+  --radius: 9px;
+  --radius-l: 13px;
+  --topbar: 46px;
+  --rail: 52px;
+  --dock: 178px;
+  --shadow: 0 10px 30px rgba(15, 23, 42, .16);
+  --shadow-lg: 0 24px 64px rgba(10, 14, 22, .38);
+  --ease: cubic-bezier(.2, .7, .3, 1);
+  --font: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+    --bg: #141519;
+    --bg-soft: #0f1012;
+    --panel: #1c1e23;
+    --panel2: #24262c;
+    --panel3: #2b2e35;
+    --line: #31343c;
+    --line-soft: #282b32;
+    --text: #e9eaee;
+    --sub: #8f96a3;
+    --accent: #4d7dff;
+    --accent-weak: rgba(77, 125, 255, .16);
+    --accent-grad: linear-gradient(100deg, #3f6dff, #8f3dff);
+    --danger: #ff6b6b;
+    --ok: #49d17f;
+    --warn: #e5b34a;
+    --glass: rgba(19, 21, 26, .9);
+    --glass-2: rgba(42, 46, 54, .92);
+    --glass-line: rgba(255, 255, 255, .14);
+    --glass-text: #f2f3f5;
+    --glass-sub: #a7adb8;
+    --glass-shadow: rgba(0, 0, 0, .45);
+    --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+    --shadow-lg: 0 24px 64px rgba(0, 0, 0, .6);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --bg: #141519;
+    --bg-soft: #0f1012;
+    --panel: #1c1e23;
+    --panel2: #24262c;
+    --panel3: #2b2e35;
+    --line: #31343c;
+    --line-soft: #282b32;
+    --text: #e9eaee;
+    --sub: #8f96a3;
+    --accent: #4d7dff;
+    --accent-weak: rgba(77, 125, 255, .16);
+    --accent-grad: linear-gradient(100deg, #3f6dff, #8f3dff);
+    --danger: #ff6b6b;
+    --ok: #49d17f;
+    --warn: #e5b34a;
+    --glass: rgba(19, 21, 26, .9);
+    --glass-2: rgba(42, 46, 54, .92);
+    --glass-line: rgba(255, 255, 255, .14);
+    --glass-text: #f2f3f5;
+    --glass-sub: #a7adb8;
+    --glass-shadow: rgba(0, 0, 0, .45);
+    --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+    --shadow-lg: 0 24px 64px rgba(0, 0, 0, .6);
+  }
+}
+:root[data-theme="light"] { color-scheme: light; }

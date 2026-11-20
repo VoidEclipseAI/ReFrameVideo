@@ -1,0 +1,13 @@
+# Backend (Python 3.10+). Also needs ffmpeg / ffprobe on PATH.
+# Keep this file ASCII-only: older pip on Chinese Windows reads it as GBK.
+fastapi>=0.110
+uvicorn>=0.27
+numpy>=1.26
+opencv-python>=4.9
+pillow>=10.0
+requests>=2.31
+scipy>=1.11
+websocket-client>=1.6       # optional: ComfyUI sampling progress
+
+# UI tests only: pip install playwright && playwright install chromium
+# playwright>=1.40

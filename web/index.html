@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReFrameVideo</title>
+<link rel="icon" type="image/svg+xml" href="reframe-favicon.svg">
+<link rel="stylesheet" href="ui/tokens.css">
+<link rel="stylesheet" href="ui/canvas.css">
+<link rel="stylesheet" href="ui/layout.css">
+<link rel="stylesheet" href="ui/components.css">
+</head>
+<body data-tab="video">
+
+<header id="topbar">
+  <div class="tb-l">
+    <img class="brand" src="reframe-favicon.svg" alt="ReFrameVideo" width="28" height="28">
+    <div id="projTabs" class="ctabs ctabs-top" role="tablist" aria-label="打开的项目"></div>
+    <button id="projBtn" class="ctab-add" title="打开视频 / 项目（Ctrl+O）" aria-label="打开视频或项目"><span class="ico" data-icon="plus"></span></button>
+    <span id="projName" class="sr-only">未打开项目</span>
+  </div>
+  <div class="tb-r">
+    <button id="galleryBtn" class="tb-btn" title="所有项目生成过的视频和图片，按时间排；点一个直接跳过去"><span class="ico" data-icon="images"></span><span>所有结果</span></button>
+    <span class="tb-sep"></span>
+    <button id="undoBtn" class="icon-btn" data-icon="undo" title="撤销（Ctrl+Z）" aria-label="撤销"></button>
+    <button id="redoBtn" class="icon-btn" data-icon="redo" title="重做（Ctrl+Shift+Z）" aria-label="重做"></button>
+    <span class="tb-sep"></span>
+    <span id="engineTag" class="tag" title="绿点 = 后端和 ComfyUI 都连得上；红点 = 连不上（看下面的任务日志）"><i id="engDot" class="eng-dot"></i><span id="engTagText"></span></span>
+    <button id="stopBtn" class="stop-btn" hidden title="停止当前任务"><span class="ico" data-icon="stop"></span><span class="stop-label">停止</span></button>
+    <select id="uiLanguage" aria-label="Language" title="Language"><option value="zh">中文</option><option value="en">English</option></select>
+    <button id="provBtn" class="icon-btn" data-icon="settings" title="设置" aria-label="设置"></button>
+    <button id="helpBtn" class="icon-btn" data-icon="help" title="快捷键" aria-label="快捷键"></button>
+  </div>
+</header>
+
+<main>
+  <nav id="toolbar" aria-label="画布工具">
+    <div id="segRail" hidden>                                <!-- 长片段的某一段：段号竖排（ui/sequence.js） -->
+      <button id="segRailBack" data-icon="layers" title="回到分段页" aria-label="回到分段页"></button>
+      <div id="segRailList"></div>
+      <div class="sep"></div>
+    </div>
+    <button id="toolSel" class="on" data-icon="pointer" title="选择 / 移动：点选主体、拖动、缩放" aria-label="选择 / 移动"></button>
+    <button id="toolHand" data-icon="hand" title="抓手：拖动平移画面（也可以按住空格拖）" aria-label="抓手"></button>
+    <button id="toolPick" data-icon="target" title="点选识别：在画面上点主体（左键选中、右键排除），SAM 识别并跟踪" aria-label="点选识别"></button>
+    <button id="toolMask" data-icon="brush" title="画蒙版：空区蒙版 / 背景预填 / 保护蒙版，选好形状直接在画面上画" aria-label="画蒙版"></button>
+    <button id="toolRefine" data-icon="eraser" title="逐帧修整：用画笔修选中主体这一帧的抠图" aria-label="逐帧修整"></button>
+    <div class="sep"></div>
+    <button id="frameBtn" data-icon="crop" title="画幅（F）" aria-label="画幅"></button>
+    <button id="fitBtn" data-icon="fit" title="适应画幅（Shift+0）" aria-label="适应画幅"></button>
+    <button id="zoneBtn" data-icon="grid" title="重绘范围（M）" aria-label="重绘范围"></button>
+    <button id="tintBtn" data-icon="palette" title="显示主体颜色" aria-label="显示主体颜色"></button>
+    <button id="toolAlpha" data-icon="contrast" title="Alpha 视图：选中主体这一帧的抠图，黑底白色（A）" aria-label="Alpha 视图"></button>
+    <button id="toolCmp" data-icon="split" title="和原视频对比：左原视频、右当前，拖中间竖线" aria-label="和原视频对比"></button>
+    <div class="sep"></div>
+    <button id="flipHBtn" data-icon="flip-h" title="水平翻转" aria-label="水平翻转"></button>
+    <button id="flipVBtn" data-icon="flip-v" title="垂直翻转" aria-label="垂直翻转"></button>
+    <button id="resetBtn" data-icon="rotate-ccw" title="还原变换" aria-label="还原变换"></button>
+    <button id="toolGuide" data-icon="book" title="新手教程" aria-label="新手教程"></button>
+    <button id="toolKeys" data-icon="keyboard" title="快捷键" aria-label="快捷键"></button>
+  </nav>
+
+  <section id="viewer">
+    <div id="docTabs">
+      <div id="tabList" class="ctabs" role="tablist"></div>
+      <button id="tabAdd" class="ctab-add" title="打开页面 / 新建图片：首帧 / 尾帧 / 背景图 / 资料卡" aria-label="打开页面或新建图片">
+        <span class="ico" data-icon="plus"></span>
+      </button>
+      <div id="tabMenu" hidden></div>
+    </div>
+    <div id="imgView"><div id="imgBox"><img id="imgMain" alt=""><img id="imgRepaintOv" alt="" hidden><img id="imgCmp" alt="" hidden><div id="imgCmpTags" hidden><span>输入</span><span>结果</span></div><div id="imgCmpLine" hidden><i></i></div><button id="imgCmpBtn" type="button" data-icon="split" title="和输入图对比：左 = 交给模型的输入图，右 = 结果；拖中间竖线（或在图上按住拖）" aria-label="和输入图对比" hidden></button></div><div id="imgCaption" class="sub"></div></div>
+    <div id="resView"><div id="resBox"><video id="resVideo" controls loop playsinline></video></div><div id="resCaption" class="sub"></div></div>
+    <div id="stage">
+      <div id="tabSub" class="ctabs ctabs-glass" hidden></div>
+      <div id="frameChecker" hidden></div>
+      <div id="bgChecker" hidden></div>
+      <canvas id="base"></canvas>
+      <div id="zoneLegend" hidden><span id="zlPixels"><span title="空区：涂灰、完全重绘（含画幅扩出去的部分）"><span class="zl full"></span>空区</span> <span title="融合带：重绘但不涂灰（重绘区往外一圈）"><span class="zl trans"></span>融合带</span> <span title="主体：看得见的图层，不重绘"><span class="zl body"></span>主体</span> </span><span id="zlCells" hidden>按格：红 = 重绘 · 绿 = 保留主体 · 黄 = 主体被顺带重绘 · 无色 = 保留</span> <span class="sub" id="zlWait"></span></div>
+      <div id="layers"></div>
+      <!-- 主体颜色叠加层必须压在图层画布上面：图层是抠出来的不透明主体，放下面就被完全盖住了 -->
+      <canvas id="ov"></canvas>
+      <div id="cmpWrap" hidden><canvas id="cmpCv"></canvas></div>
+      <div id="cmpLine" hidden><i></i></div>
+      <div id="cmpTags" hidden><span>原视频</span><span>当前</span></div>
+      <canvas id="zoneCv" hidden></canvas>
+      <canvas id="maskViewCv" hidden></canvas>
+      <img id="stillShow" alt="" hidden>
+      <svg id="gizmo"></svg>
+      <svg id="frameSvg"></svg>
+      <div id="selBar" class="ui-float" hidden role="toolbar" aria-label="选中的图层">
+        <span id="sbDot" class="sb-dot"></span>
+        <button id="sbName" class="sb-name" title="在右栏打开这个图层的蒙版设置">—</button>
+        <button id="sbEye" class="sb-ico" data-icon="eye" title="隐藏（H）" aria-label="隐藏"></button>
+        <span class="sb-sep"></span>
+        <span id="sbScale" class="sb-grow" title="缩放（和「变换」里的宽 % / 高 % 是同一个值）">
+          <button id="sbScaleMinus" class="sb-ico" data-icon="minus" aria-label="缩小 5%"></button>
+          <button id="sbScaleVal" class="sb-val" title="点一下输入；双击回 100%">100%</button>
+          <button id="sbScalePlus" class="sb-ico" data-icon="plus" aria-label="放大 5%"></button>
+        </span>
+        <button id="sbFlip" class="sb-ico" data-icon="flip-h" title="水平翻转" aria-label="水平翻转"></button>
+        <button id="sbReset" class="sb-ico" data-icon="rotate-ccw" title="还原变换（位置、大小、旋转、翻转回到原视频）" aria-label="还原变换"></button>
+        <span class="sb-sep"></span>
+        <button id="sbRefine" class="sb-ico" data-icon="brush" title="修这一帧的抠图" aria-label="逐帧修整"></button>
+        <button id="sbMask" class="sb-ico sb-drop" data-icon="layers" title="蒙版：主体轮廓重绘、空区形状、边界框内重绘…" aria-label="蒙版"></button>
+        <button id="sbMerge" class="sb-ico" data-icon="merge" title="合并选中的图层" aria-label="合并图层" hidden></button>
+        <span class="sb-sep"></span>
+        <button id="sbMore" class="sb-ico" data-icon="more" title="更多：边缘类型、改名、置顶 / 置底、锁定、删除" aria-label="更多"></button>
+        <button id="sbClose" class="sb-ico" data-icon="x" title="取消选中（Esc）" aria-label="取消选中"></button>
+        <div id="sbMenu" class="ui-menu" hidden></div>
+        <div id="sbMaskMenu" class="ui-menu" hidden></div>
+      </div>
+      <div id="empty">打开视频开始</div>
+      <canvas id="refineCv" hidden></canvas>
+      <div id="brushCursor" hidden></div>
+      <div id="refineBar" class="ui-bar" hidden>
+        <span class="bar-title">逐帧修整 · <b id="rfName"></b> · <b id="rfFrame"></b></span>
+        <button id="rfBrush" class="on" data-icon="brush" title="画笔：涂上去的地方算主体（B）" aria-label="画笔"></button>
+        <button id="rfEraser" data-icon="eraser" title="橡皮：擦掉的地方不算主体（E，按住 Alt 切换）" aria-label="橡皮"></button>
+        <button id="rfWand" data-icon="wand" title="魔棒：点一下选中颜色相近、连成一片的区域（W；Alt 点 = 去掉）" aria-label="魔棒"></button>
+        <button id="rfMove" data-icon="move" title="平移：拖动整张抠图（V）" aria-label="平移"></button>
+        <label id="rfSizeBox" title="笔刷大小">大小 <input type="range" id="rfSize" min="2" max="200" value="30"> <span id="rfSizeVal">30</span></label>
+        <label id="rfTolBox" hidden title="魔棒容差">容差 <input type="range" id="rfTol" min="1" max="120" value="24"> <span id="rfTolVal">24</span></label>
+        <button id="rfUndo" data-icon="undo" title="撤销这一帧的上一笔（Ctrl+Z）" aria-label="撤销"></button>
+        <button id="rfReset" data-icon="rotate-ccw" title="还原这一帧" aria-label="还原这一帧"></button>
+        <button id="rfPrev" data-icon="chevron-left" title="上一帧（,）" aria-label="上一帧"></button>
+        <button id="rfNext" data-icon="chevron-right" title="下一帧（.）" aria-label="下一帧"></button>
+        <button id="rfCancel" data-icon="x" title="放弃修改并退出（Esc）" aria-label="取消"></button>
+        <button id="rfSave" class="primary-sm" data-icon="check" title="保存并退出（Enter）" aria-label="保存"></button>
+      </div>
+      <canvas id="shapeCv" hidden></canvas>
+      <div id="shapeBar" class="ui-bar" hidden>
+        <span class="bar-title">空区蒙版</span>
+        <button data-shape="rect" data-icon="rect" title="拖出一个框" aria-label="矩形"></button>
+        <button data-shape="ellipse" data-icon="ellipse" title="拖出一个椭圆" aria-label="椭圆"></button>
+        <button data-shape="poly" data-icon="polygon" title="点几个点，双击 / 回车闭合" aria-label="多边形"></button>
+        <button data-shape="lasso" data-icon="lasso" title="按住拖出任意形状" aria-label="套索"></button>
+        <button data-shape="brush" data-icon="brush" title="按住涂抹" aria-label="画笔"></button>
+        <label id="shapeSizeBox" hidden title="笔刷大小">大小 <input type="range" id="shapeSize" min="4" max="300" value="60"> <span id="shapeSizeVal">60</span></label>
+        <button id="shapeUndo" data-icon="undo" title="撤销一步（Ctrl+Z）" aria-label="撤销"></button>
+        <button id="shapeClear" data-icon="trash" title="清空形状" aria-label="清空"></button>
+        <button id="shapeCancel" data-icon="x" title="退出（Esc）" aria-label="取消"></button>
+        <button id="shapeOk" class="primary-sm" data-icon="check" title="完成（Enter）" aria-label="完成"></button>
+        <span class="sub" id="shapeHint"></span>
+      </div>
+      <div id="zoomBar" class="ui-float">
+        <button id="zoomOut" data-icon="zoom-out" title="缩小（Ctrl+-）" aria-label="缩小"></button>
+        <select id="zoomSel" title="缩放">
+          <option value="cur">100%</option>
+          <option value="fitframe">适应画幅　Shift+0</option>
+          <option value="fitall">显示全部　Shift+1</option>
+          <option value="sel">适应选中　Shift+2</option>
+          <option value="0.25">25%</option><option value="0.5">50%</option><option value="1">100%　Ctrl+1</option><option value="2">200%</option>
+        </select>
+        <button id="zoomIn" data-icon="zoom-in" title="放大（Ctrl+=）" aria-label="放大"></button>
+        <span class="sb-sep"></span>
+        <button id="cmpBtn" data-icon="split" title="拖动对比：左原视频、右当前，拖中间竖线" aria-label="拖动对比"></button>
+        <button id="cmpSideBtn" data-icon="columns" title="并排对比：左右各一整个画面" aria-label="并排对比"></button>
+      </div>
+    </div>
+    <div id="transport">
+      <button id="playBtn" class="play" data-icon="play" title="播放（空格）" aria-label="播放"></button>
+      <span id="counter">0 / 0</span>
+      <button id="firstFrameBtn" class="icon-btn" data-icon="skip-back" title="第一帧" aria-label="第一帧"></button>
+      <button id="lastFrameBtn" class="icon-btn" data-icon="skip-forward" title="最后一帧" aria-label="最后一帧"></button>
+      <button id="cacheBtn" class="icon-btn" data-icon="zap" title="缓存整段" aria-label="缓存整段"></button>
+      <span id="loading"></span>
+      <span class="hint" id="hint">点画面里的主体，浮动条上可以直接缩放、改边缘</span>
+    </div>
+    <div id="timeline">
+      <div id="barsGrip" title="上下拖：调高 / 调低下面图层条的区域（双击恢复）"></div>
+      <div id="track">
+        <div id="range"><div class="handle" data-h="start"></div><div class="handle" data-h="end"></div></div>
+        <div id="playhead"></div>
+      </div>
+      <div id="objBars"></div>
+    </div>
+  </section>
+<aside id="sidebar" aria-label="面板">
+  <div id="sideResize" role="separator" aria-orientation="vertical" aria-label="拖动调整右栏宽度（双击恢复默认）" title="拖动调整右栏宽度（双击恢复默认）" tabindex="0"></div>
+  <div id="sideTop">
+  <nav id="panelRail" aria-label="面板">
+    <button data-group="layers" data-icon="layers" title="图层（L）"><span class="pr-lbl">图层</span><span id="layerCount" class="rail-badge" hidden>0</span></button>
+    <button data-group="gen" data-icon="sparkles" title="生成：视频编辑时是视频生成，图片编辑时是图片生成"><span class="pr-lbl" id="genRailLbl">生成</span></button>
+    <button data-group="mask" data-icon="brush" title="蒙版（P）"><span class="pr-lbl">蒙版</span></button>
+    <button data-group="transform" data-icon="move" title="变换：位置 / 大小 / 旋转 / 不透明度"><span class="pr-lbl">变换</span></button>
+    <button data-group="frame" data-icon="crop" title="输出画幅：比例 / 扩图 / 裁切黑边 / 导出"><span class="pr-lbl">画幅</span></button>
+    <button data-group="versions" data-icon="film" title="历史版本"><span class="pr-lbl">版本</span></button>
+    <button data-group="export" data-icon="download" title="导出：打包这一步交给模型的素材、提示词和工作流，下载后可在自己的 ComfyUI 跑"><span class="pr-lbl">导出</span></button>
+    <button data-group="history" data-icon="history" title="历史：每一步操作，可以恢复到某一步之前"><span class="pr-lbl">历史</span></button>
+    <button class="rail-page" data-page="res" data-icon="film" title="视频结果：这一页生成出来的成片"><span class="pr-lbl">结果</span></button>
+    <button class="rail-page" data-page="ires" data-icon="image" title="图片结果：这张图生成出来的所有候选，点一张选用"><span class="pr-lbl">结果</span></button>
+  </nav>
+  <div id="panelCol">
+    <section class="pgroup" data-group="layers">
+      <div class="sb-scroll">
+      <div class="panel" id="segPanel">
+        <h3 class="seg-head">主体抠图识别
+          <span class="seg-radio" id="segMode" role="radiogroup" aria-label="识别方式">
+            <label title="输入主体名称，SAM 3.1 找出所有这类主体"><input type="radio" name="segMode" value="text" checked>文本提示</label>
+            <label title="在画面上点要的主体，SAM 3.1 只识别这一个"><input type="radio" name="segMode" value="pick">点选提示</label>
+          </span></h3>
+        <div class="row" id="segTextRow">
+          <input id="segText" placeholder="输入主体名称（英文）" title="例如 person、car、hat" aria-label="要识别的主体">
+          <button id="segBtn" class="primary-sm">识别</button>
+        </div>
+        <div id="segPickBox" hidden>
+          <div class="pick-hint">在画面上点要识别的主体：<b class="pk-pos">左键</b> 选中，<b class="pk-neg">右键</b>（或 Alt + 左键）排除不要的部分</div>
+          <div class="row pick-row">
+            <input id="pickName" placeholder="图层名（可空）" aria-label="图层名">
+            <select id="pickTracker" title="跟踪模型：SAM 3.1 = 硬边，被挡后能找回；MatAnyone2 = 柔边更连贯，但全遮挡或出画后可能跟丢" aria-label="跟踪模型">
+              <option value="sam">SAM 3.1</option>
+              <option value="matanyone">MatAnyone2</option>
+            </select>
+            <button id="pickClear" class="ghostbtn" data-icon="rotate-ccw" title="清除所有点" aria-label="清除所有点"></button>
+            <button id="pickGo" class="primary-sm" disabled>识别</button>
+          </div>
+          <div class="sub" id="pickInfo">还没点</div>
+        </div>
+        <label class="chk seg-matte" title="识别后用 MatAnyone2 抠出头发丝、运动模糊等半透明边缘（多花一点时间）。不勾 = 只用 SAM 硬边"><input type="checkbox" id="segMatte" checked><span id="segMatteTxt">MatAnyone2 柔边（推荐）</span></label>
+        <div class="row seg-meta">
+          <label class="seg-model" title="识别模型（SAM）">模型 <select id="samModel" class="grow"></select></label>
+          <span class="sub" id="rangeText" title="只在时间轴选中的范围里识别">帧范围 —</span>
+        </div>
+        <div class="sub" id="samMsg"></div>
+      </div>
+
+      <div class="panel" id="layerPanel">
+        <h3 title="上面的图层盖住下面的">图层<span id="layerOrderHint" hidden>上层在前</span></h3>
+        <div id="layerList"></div>
+        <div class="layer-actions">
+          <button data-z="front" data-icon="to-front" title="置顶（Ctrl+Shift+]）" aria-label="置顶"></button>
+          <button data-z="up" data-icon="arrow-up" title="上移一层（Ctrl+]）" aria-label="上移一层"></button>
+          <button data-z="down" data-icon="arrow-down" title="下移一层（Ctrl+[）" aria-label="下移一层"></button>
+          <button data-z="back" data-icon="to-back" title="置底（Ctrl+Shift+[）" aria-label="置底"></button>
+          <span class="la-sep"></span>
+          <button id="addLayerBtn" data-icon="plus" title="新建空区蒙版 / 背景预填（方块 / 圆形 / 多边形…）" aria-label="新建空区蒙版或背景预填"></button>
+          <span class="grow"></span>
+          <button id="mergeLayerBtn" data-icon="merge" title="合并图层" aria-label="合并图层"></button>
+          <button id="delLayerBtn" class="danger" data-icon="trash" title="删除图层" aria-label="删除图层"></button>
+        </div>
+      </div>
+
+      <div class="panel" id="mattePanel">
+        <h3 class="mask-head" title="这个主体抠出来的样子：边缘、大小和清理。改的是抠图本身，视频和所有图片都跟着变">主体抠图微调 <span class="sub" id="matteName"></span>
+          <span class="mask-acts">
+            <button id="matteRefine" class="ires-ic" data-icon="pencil" title="逐帧修整：在当前帧上用画笔补上 / 擦掉" aria-label="逐帧修整"></button>
+            <button id="maskView" class="ires-ic" data-icon="contrast" title="Alpha 视图（A）：选中图层的抠图显示成黑底白色，检查抠得好不好" aria-label="Alpha 视图"></button>
+            <button id="matteCopy" class="ires-ic" data-icon="copy" title="复制抠图设置（边缘模式、收缩 / 扩展、清理）" aria-label="复制抠图设置"></button>
+            <button id="mattePaste" class="ires-ic" data-icon="clipboard" title="粘贴抠图设置到选中的图层" aria-label="粘贴抠图设置"></button>
+            <button id="matteReset" class="ires-ic" data-icon="rotate-ccw" title="重置这个图层的抠图设置（硬边、0、全关）" aria-label="重置抠图设置"></button>
+          </span></h3>
+        <div class="mctl mrow" data-f="edge" data-focus="3" title="边缘模式：硬边 = SAM 3.1 原样；混合 = 身体实心、外圈柔边（发丝）；柔边 = 全部柔边">
+          <div class="mhead"><span class="ml">边缘模式</span>
+            <select id="edgeSel">
+              <option value="sam" title="SAM 3.1 原样">硬边</option>
+              <option value="mix" title="身体实心，外圈柔边（发丝）">混合</option>
+              <option value="matte" title="全部用 MatAnyone2 柔边">柔边</option>
+            </select></div>
+        </div>
+        <div class="mctl mrow" data-f="grow" data-focus="3" title="收缩 / 扩展：正数往外扩，负数往里收。只改抠出的像素；加一圈重绘请用「主体轮廓重绘」">
+          <div class="mhead"><span class="ml">收缩 / 扩展</span><b id="growVal"></b></div>
+          <input type="range" id="growRange" min="-10" max="20" step="1">
+        </div>
+        <div class="mctl mrow" data-f="fill_holes" title="填充孔洞：补上抠图内部不超过这么大的小孔；贴画面边的缺口不补">
+          <div class="mhead"><span class="ml">填充孔洞</span><b id="fillHolesVal"></b></div>
+          <input type="range" id="fillHolesRange" min="0" max="80" step="2">
+        </div>
+        <div class="mctl mrow" data-f="despeckle" title="去除杂点：每帧面积小于最大那块这么多 % 的零碎小块去掉">
+          <div class="mhead"><span class="ml">去除杂点</span><b id="despeckleVal"></b></div>
+          <input type="range" id="despeckleRange" min="0" max="30" step="1">
+        </div>
+        <div class="mctl mrow" data-f="smooth_t" title="帧间平滑：每帧和前后各 N 帧一起投票，去掉抠图逐帧抖动、闪烁（动作很快时会稍微滞后）">
+          <div class="mhead"><span class="ml">帧间平滑</span><b id="smoothTVal"></b></div>
+          <input type="range" id="smoothTRange" min="0" max="4" step="1">
+        </div>
+      </div>
+      </div>
+    </section>
+    <section class="pgroup" data-group="mask">
+      <div class="sb-scroll">
+      <div class="panel" id="maskPanel">
+        <h3 class="mask-head">蒙版 <span class="sub" id="maskName"></span><img class="ph-thumb" id="maskThumb" alt="" hidden>
+          <span class="mask-acts">
+            <button id="maskCopy" class="ires-ic" data-icon="copy" title="复制蒙版设置（重绘范围和原位置空区），主体扩绘区不复制" aria-label="复制蒙版设置"></button>
+            <button id="maskPaste" class="ires-ic" data-icon="clipboard" title="粘贴蒙版设置到选中的图层" aria-label="粘贴蒙版设置"></button>
+            <button id="maskReset" class="ires-ic" data-icon="rotate-ccw" title="重置这个图层的蒙版：主体轮廓重绘往外 3、空区形状矩形 ×3，其余关；主体扩绘区不动" aria-label="重置蒙版设置"></button>
+          </span></h3>
+        <div class="mask-stats sub" id="maskStats" title="这个图层造成的空区：在哪些帧、占原视频多少。生成时这些地方会重绘"></div>
+
+        <div class="msec" id="msecSubj">
+        <div class="panel-group-title" title="主体现在的位置：跟着主体走">主体重绘范围</div>
+        <div class="mctl mrow" data-f="ring_redraw" data-focus="2" title="主体轮廓重绘：正 = 主体外加一圈 N 像素重绘；负 = 主体边缘收进 N 像素">
+          <div class="mhead"><span class="ml">主体轮廓重绘</span><b id="ringVal"></b></div>
+          <input type="range" id="ringRange" min="-20" max="40" step="1">
+        </div>
+        <div class="mctl mrow ext-row" data-f="box_ext" data-focus="2" title="主体扩绘区：把主体外框往一边拉出，让模型补画那一边（跟着主体走）。点 ＋ 添加">
+          <div class="mhead"><span class="ml">主体扩绘区</span><span class="grow"></span>
+            <button id="extNew" class="ires-ic" data-icon="plus" title="添加一个主体扩绘区：下面多出一条，填四边像素或拖画面上的橙色箭头；什么都没填就自动取消" aria-label="添加主体扩绘区"></button></div>
+          <div id="extList" class="sub-list"></div>
+        </div>
+        <div class="mctl mrow rg-video" title="主体局部保留：在主体身上画一块范围（跟着主体走）。范围内保留，范围外变空区重绘">
+          <div class="mhead"><span class="ml">主体局部保留</span><span class="grow"></span>
+            <button id="keepNew" class="ires-ic" data-icon="plus" title="在画面上这个主体身上画一块保护范围（矩形 / 椭圆 / 多边形 / 套索 / 画笔）" aria-label="新建主体局部保留"></button></div>
+          <div id="keepList" class="sub-list"></div>
+        </div>
+        <div class="mctl mrow" title="主体抠图拆分：在主体里再用 SAM 识别一块（如 hands），单独成图层，可单独移动">
+          <div class="mhead"><span class="ml">主体抠图拆分</span><span class="grow"></span>
+            <button id="partNew" class="ires-ic" data-icon="plus" title="识别一个部位（输入英文，例如 hands）" aria-label="识别部位"></button></div>
+          <div id="partList" class="sub-list"></div>
+        </div>
+        <div class="mctl mrow" data-f="edge_fill" data-focus="2" title="补全被裁切部分：图层原本被画面边截掉，移开后从截断处往外补画。只在贴边的帧生效">
+          <label class="mhead chk"><input type="checkbox" id="edgeFill"> 补全被裁切部分</label>
+        </div>
+        <div class="mctl mrow" data-f="box_redraw" data-focus="2" title="边界框内重绘：这个图层外接框里，除了看得见的图层，全部当空区重绘">
+          <label class="mhead chk"><input type="checkbox" id="boxRedraw"> 边界框内重绘</label>
+        </div>
+        <div class="panel-group-title" title="主体移走 / 隐藏后在原位置留下的空区">原位置空区</div>
+        <div class="mctl mrow" data-f="hole_rect" data-focus="2" title="空区形状：轮廓 = 照原样；矩形 ×N = 横切 N 段换成矩形（防止补出人形），N 越大越贴身">
+          <div class="mhead"><span class="ml">空区形状</span><b id="holeRectVal"></b></div>
+          <input type="range" id="holeRectRange" min="0" max="8" step="1">
+        </div>
+        <div class="mctl mrow" data-f="hole_dilate" data-focus="2" title="空区扩展 / 收缩：原位置空区往外扩（正）或往里收（负），单位是原视频像素">
+          <div class="mhead"><span class="ml">空区扩展 / 收缩</span><b id="holeDilateVal"></b></div>
+          <input type="range" id="holeDilateRange" min="-10" max="40" step="1">
+        </div>
+        <div class="mctl mrow" data-f="hole_t" data-focus="2" title="空区帧间合并：空区取前后 ±N 帧的并集；动作快时重绘区不再闪">
+          <div class="mhead"><span class="ml">空区帧间合并</span><b id="holeTVal"></b></div>
+          <input type="range" id="holeTRange" min="0" max="8" step="1">
+        </div>
+        <div class="mctl mrow rg-video" title="空区预填背景：生成时用背景图填（不涂灰），仍会重绘。需先做好背景图">
+          <label class="mhead chk"><input type="checkbox" id="holePrefill"> 空区预填背景</label>
+        </div>
+
+        </div>
+        <div class="msec" id="msecShape">
+        <div class="panel-group-title" title="空区蒙版 / 背景预填 / 保护蒙版这类自己画的蒙版图层，每画一次是一个新图层">手绘蒙版 <span class="sub" id="shapeKindVal"></span></div>
+        <div class="shape-new">
+          <button type="button" class="ghostbtn" data-kind="bgswap" title="新建替换背景：主体以外全部当空区，生成时整片重画背景，主体保持原样">＋ 替换背景</button>
+          <button type="button" class="ghostbtn" data-kind="hole" title="新建空区蒙版：画的地方当空区，生成时重绘">＋ 空区蒙版</button>
+          <button type="button" class="ghostbtn" data-kind="prefill" title="新建背景预填：范围里本来就是空区的地方，生成时用背景图填（不涂灰），仍然重绘">＋ 背景预填</button>
+          <button type="button" class="ghostbtn" data-kind="protect" title="新建保护蒙版：画的地方一律不重绘，保留原样">＋ 保护蒙版</button>
+        </div>
+        <div id="shapeEdit" hidden>
+        <div class="mctl mrow" title="帧范围：这个蒙版只在这几帧生效（也可以在时间轴上拖色条两端）">
+          <div class="mhead"><span class="ml">帧范围</span></div>
+          <div class="shape-fr"><input id="shapeStart" type="number" min="0" step="1" aria-label="起始帧"> – <input id="shapeEnd" type="number" min="0" step="1" aria-label="结束帧"></div>
+        </div>
+        <div class="mctl mrow" title="启用：关掉 = 当这个蒙版不存在（和图层行上的眼睛一样）">
+          <label class="mhead chk"><input type="checkbox" id="shapeOn"> 启用</label>
+        </div>
+        </div>
+        </div>
+
+        <div class="panel-group-title rg-video" title="边界融合：重绘区外加一圈融合带，只影响视频生成。按 M 看范围">边界融合（全局）</div>
+        <div class="mctl mrow rg-video" title="融合带宽度：重绘区往外多重绘一圈（不涂灰），让新旧画面自然衔接。0 = 不加">
+          <div class="mhead"><span class="ml">融合带宽度</span><b id="genTransGrowVal"></b></div>
+          <input type="range" id="genTransGrow" min="0" max="96" step="4" value="48">
+        </div>
+        <div class="mctl mrow rg-video" title="主体边缘融合：重绘 = 贴重绘区的人边也重绘，避免硬接缝；保护 = 融合带离人边留距离">
+          <div class="mhead"><span class="ml">主体边缘融合</span><b id="genTransAvoidVal"></b></div>
+          <input type="range" id="genTransAvoid" min="-48" max="96" step="4" value="-16">
+        </div>
+        <div class="mctl mrow rg-video" title="运动范围重绘：动过或隐藏的图层，原位置和新位置外接框里的背景也重绘（不涂灰）">
+          <label class="mhead chk"><input type="checkbox" id="genBlue"> 运动范围重绘</label>
+          <label class="sub-opt" title="帧扩展：运动范围往前后各扩几帧，让变化平滑（0 = 不扩）">帧扩展 ± <input id="genFrames" type="number" min="0" max="16" step="1" value="0"> 帧</label>
+        </div>
+        <div class="panel-group-title rg-mask" id="rgMaskTitle" title="只影响这张图片，默认都是 0">填补范围（仅此图）</div>
+        <div class="mctl mrow rg-mask" data-focus="2" title="闭合：这张图所有空的地方做闭运算连成整块，减少照着画出人影">
+          <div class="mhead"><span class="ml">空区闭合</span><b id="imgCloseVal"></b>
+            <button class="ghostbtn rgRec" data-k="imgClose" data-v="100" title="回到推荐值 100">100</button></div>
+          <input type="range" id="imgClose" min="0" max="300" step="5">
+        </div>
+        <div class="mctl mrow rg-mask" data-focus="2" title="扩展：这张图所有空的地方再往外扩这么多，不扩到人身上">
+          <div class="mhead"><span class="ml">空区外扩</span><b id="imgGrowVal"></b>
+            <button class="ghostbtn rgRec" data-k="imgGrow" data-v="30" title="回到推荐值 30">30</button></div>
+          <input type="range" id="imgGrow" min="0" max="200" step="5">
+        </div>
+        <div class="mctl mrow rg-mask" data-focus="2" title="主体描边重绘：人身上贴着空区的一圈也让图片模型重绘，去掉白色描边">
+          <div class="mhead"><span class="ml">主体描边重绘</span><b id="imgEdgeVal"></b>
+            <button class="ghostbtn rgRec" data-k="imgEdge" data-v="14" title="回到推荐值 14">14</button></div>
+          <input type="range" id="imgEdge" min="0" max="60" step="1">
+        </div>
+        <div class="mctl mrow rg-mask" data-focus="2" title="整体外扩：最后整体再扩一圈（人身上也扩），盖住轮廓线">
+          <div class="mhead"><span class="ml">整体外扩</span><b id="imgMgrowVal"></b>
+            <button class="ghostbtn rgRec" data-k="imgMgrow" data-v="16" title="回到推荐值 16">16</button></div>
+          <input type="range" id="imgMgrow" min="0" max="80" step="2">
+        </div>
+        <div class="mctl mrow rg-mask" data-focus="2" title="包含遮挡物：移动过的主体，原视频里碰到它的别的主体整个算进补图范围">
+          <label class="chk mhead"><input type="checkbox" id="imgOcc"> 包含遮挡物</label>
+        </div>
+      </div>
+      </div>
+    </section>
+    <section class="pgroup" data-group="transform">
+      <div class="sb-scroll">
+      <div class="panel" id="propPanel">
+        <h3 class="ph-row">变换 <span class="sub" id="propName"></span><img class="ph-thumb" id="propThumb" alt="" hidden></h3>
+        <div class="grid">
+          <label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">X</span> <input type="number" data-p="x" step="1"></label>
+          <label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">Y</span> <input type="number" data-p="y" step="1"></label>
+          <label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">宽 %</span> <input type="number" data-p="w" step="1"></label>
+          <label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">高 %</span> <input type="number" data-p="h" step="1"></label>
+          <label title="图层整段外框的宽（原视频像素）；按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">宽 px</span> <input type="number" data-p="wpx" step="1" min="1"></label>
+          <label title="图层整段外框的高（原视频像素）；按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">高 px</span> <input type="number" data-p="hpx" step="1" min="1"></label>
+          <label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">旋转 °</span> <input type="number" data-p="rot" step="1"></label>
+          <label class="lock-ratio"><input type="checkbox" id="ratioLock" checked> 锁定比例</label>
+        </div>
+        <div class="tf-tools">
+          <div class="tf-anchor" id="tfAnchor" title="变换中心：改大小 / 旋转时这个点不动">
+            <button type="button" data-a="0"></button><button type="button" data-a="1"></button><button type="button" data-a="2"></button>
+            <button type="button" data-a="3"></button><button type="button" data-a="4"></button><button type="button" data-a="5"></button>
+            <button type="button" data-a="6"></button><button type="button" data-a="7"></button><button type="button" data-a="8"></button>
+          </div>
+          <div class="tf-align" title="对齐到画幅（按图层整段的外框）">
+            <button type="button" data-al="l" data-icon="al-left" title="左对齐到画幅" aria-label="左对齐"></button>
+            <button type="button" data-al="hc" data-icon="al-hc" title="水平居中" aria-label="水平居中"></button>
+            <button type="button" data-al="r" data-icon="al-right" title="右对齐到画幅" aria-label="右对齐"></button>
+            <button type="button" data-al="t" data-icon="al-top" title="顶对齐到画幅" aria-label="顶对齐"></button>
+            <button type="button" data-al="vc" data-icon="al-vc" title="垂直居中" aria-label="垂直居中"></button>
+            <button type="button" data-al="b" data-icon="al-bottom" title="底对齐到画幅" aria-label="底对齐"></button>
+          </div>
+        </div>
+        <div class="row tf-acts">
+          <button type="button" class="ghostbtn" data-tf="flipH" data-icon="flip-h" title="水平翻转">水平翻转</button>
+          <button type="button" class="ghostbtn" data-tf="flipV" data-icon="flip-v" title="垂直翻转">垂直翻转</button>
+          <button type="button" class="ghostbtn" data-tf="reset" data-icon="rotate-ccw" title="还原变换：位置 / 大小 / 旋转 / 翻转回到原视频">重置变换</button>
+        </div>
+        <div class="row tf-acts">
+          <button type="button" class="ghostbtn" id="tfCopy" data-icon="copy" title="复制这个图层的大小、旋转、翻转">复制变换</button>
+          <button type="button" class="ghostbtn" id="tfPaste" data-icon="layers" title="把复制的大小、旋转、翻转套到选中的图层上（位置不变，按变换中心对齐）">粘贴变换</button>
+        </div>
+        <label class="op">不透明度 <input type="range" id="opacity" min="0" max="100"> <span id="opacityVal"></span></label>
+      </div>
+      </div>
+    </section>
+    <section class="pgroup" data-group="frame">
+      <div class="sb-scroll">
+      <div class="panel" id="framePanel">
+        <h3 title="画幅 = 最终输出的画面框。比原视频大的部分生成时补画，小的部分裁掉">画幅 <span class="sub fr-size" id="frameSize"></span></h3>
+        <div class="fr-map" id="frameMap" title="蓝色 = 原视频，白框 = 画幅（输出的画面）。框里斜线的地方原视频没有，生成视频时会补画"></div>
+        <div class="sub fr-info" id="frameInfo"></div>
+
+        <div class="fr-sec">
+          <div class="row frame-top">
+            <label>比例 <select id="frameRatio">
+              <option value="orig">和原视频一样</option><option value="free">自由</option>
+              <option value="16:9">16:9（横屏）</option><option value="9:16">9:16（竖屏）</option><option value="1:1">1:1（方形）</option>
+              <option value="4:3">4:3</option><option value="4:5">4:5</option><option value="1.85:1">1.85:1</option><option value="2.39:1">2.39:1（宽银幕）</option>
+            </select></label>
+          </div>
+          <div class="row frame-btns">
+            <button id="frameEdit" class="ghostbtn" data-icon="crop" title="在画面上直接拖画幅的边和角（快捷键 F）">在画面上拖</button>
+            <button id="frameCenter" class="ghostbtn" data-icon="fit" title="把画幅移到原视频正中间">居中</button>
+            <button id="frameReset" class="ghostbtn" data-icon="rotate-ccw" title="画幅还原成和原视频一样大">还原</button>
+          </div>
+        </div>
+
+        <div class="fr-sec">
+          <div class="fr-title" title="每边往外扩的像素：正 = 扩出（生成时补画），负 = 裁掉；按住方向字左右拖也能调">每边往外扩多少 <span class="sub">（负数 = 裁掉）</span></div>
+          <div class="grid4 fr-grid">
+            <label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">上</span> <input type="number" data-f="t"><i>px</i></label><label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">下</span> <input type="number" data-f="b"><i>px</i></label>
+            <label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">左</span> <input type="number" data-f="l"><i>px</i></label><label title="按住左右拖可以直接调（Shift 快 10 倍）"><span class="scrub">右</span> <input type="number" data-f="r"><i>px</i></label>
+          </div>
+        </div>
+
+        <div class="fr-sec">
+          <div class="fr-title" title="电影常见的上下黑条：去掉后黑条那几行不算画面（不属于任何图层），画幅只留中间有画面的部分">上下黑边</div>
+          <div class="row fr-crop-row">
+            <span class="sub grow" id="frameCropText">没有去黑边</span>
+            <button id="frameLetterbox" class="ghostbtn" data-icon="crop" title="自动检测上下黑边，确认后去掉">检测并去掉</button>
+            <button type="button" id="frameCropOff" class="ghostbtn" data-icon="x" title="恢复黑边（画幅不变，黑边那几行重新算原视频）" hidden>恢复黑边</button>
+          </div>
+        </div>
+
+        <details class="fr-sec fr-adv">
+          <summary title="画幅左上角在原视频里的坐标和画幅大小（像素）；一般不用改">精确位置和大小</summary>
+          <div class="grid4 fr-grid">
+            <label title="画幅左边离原视频左边多少像素（负数 = 在原视频外）。按住左右拖可以直接调"><span class="scrub">X</span> <input type="number" data-f="x"><i>px</i></label><label title="画幅上边离原视频上边多少像素（负数 = 在原视频外）。按住左右拖可以直接调"><span class="scrub">Y</span> <input type="number" data-f="y"><i>px</i></label>
+            <label title="画幅宽度。按住左右拖可以直接调"><span class="scrub">宽</span> <input type="number" data-f="w"><i>px</i></label><label title="画幅高度。按住左右拖可以直接调"><span class="scrub">高</span> <input type="number" data-f="h"><i>px</i></label>
+          </div>
+        </details>
+
+        <label class="chk" title="画面上画幅以外的部分调暗，方便看清输出范围（只影响显示）"><input type="checkbox" id="frameDim" checked> 画幅外调暗显示</label>
+      </div>
+      </div>
+    </section>
+    <section class="pgroup" data-group="gen">
+      <div class="sb-scroll">
+        <div class="panel" id="genPanel">
+          <h3>视频生成</h3>
+          <div class="eng-row">
+          <div class="seg gen-engine" id="genEngineSw" role="radiogroup" aria-label="视频生成用 ComfyUI 还是云端 API">
+            <button type="button" data-eng="comfy" title="用 ComfyUI 生成（MiniMax H3 + LoRA）">ComfyUI</button>
+            <button type="button" data-eng="api" title="用云端平台的视频模型（在设置里选平台、填 key）：只发粗剪、参考图和提示词">API</button>
+          </div>
+          <button type="button" id="genFilesBtn" class="ghostbtn eng-files" data-icon="cube" title="选主模型 / 文本编码器 / VAE / PE 用哪个文件（同一模型的不同量化版）">模型文件</button>
+          </div>
+          <div class="gapi-only gen-api-box">
+            <div class="sub" id="genApiInfo"></div>
+            <label class="api-model" title="平台上的视频模型名。改了马上保存">模型 <input id="genApiModel" spellcheck="false" autocomplete="off"></label>
+            <label class="api-model" title="平台输出的分辨率。改了马上保存">分辨率 <select id="genApiRes"></select></label>
+            <label class="api-prompt" title="原样发给平台，软件不加任何句子">提示词<textarea id="genApiPrompt" rows="6" spellcheck="false" placeholder="写给平台视频模型的提示词。输入 @ 引用粗剪或参考图，发送时自动换成 @视频1、@图片N"></textarea></label>
+            <div class="sub">发送：@视频1 = 粗剪（空的地方是灰色），@图片N = 下面勾选的参考图。平台出的视频就是成片。</div>
+          </div>
+          <div class="dock-col gp-col">
+            <div class="dock-title gp-head"><span title="发给 H3 的提示词 = 系统提示词 + 用户提示词（接在镜头描述后）">提示词</span></div>
+            <label class="gp-label" for="genUser"><span>用户提示词</span><span class="sub">推荐留空 · 英文效果最好</span></label>
+            <textarea id="genUser" rows="3" spellcheck="false" placeholder="写画面里发生什么，例如 the two people dance apart, their hands are empty。输入 @ 引用参考图"></textarea>
+            <label class="row gp-vl" title="生成前用看图模型对照粗剪和首帧，给每块空区写补洞描述；「不用」= 通用描述，更快">空区分析 <select id="genVl" class="grow"><option value="off">不用</option><option value="qwen3vl8b">Qwen3-VL 8B</option></select></label>
+            <details id="genSysBox">
+              <summary title="按图层和参考图自动生成，和 LoRA 训练用的是同一套句子；一般不用改"><span>系统提示词</span><span class="gp-state" id="genSysState">自动</span></summary>
+              <textarea id="genSys" rows="12" spellcheck="false"></textarea>
+              <div class="gp-foot"><span class="sub" id="genSysHint">跟着图层和参考图自动更新</span>
+                <button id="genSysReset" class="ghostbtn" data-icon="rotate-ccw" title="恢复默认：改回自动生成的系统提示词">恢复默认</button></div>
+            </details>
+          </div>
+          <div class="dock-col refs-col">
+            <div class="dock-title rr-head" title="编号就是提示词里的 Picture N">参考图<button id="genRefAdd" class="ghostbtn rr-add" data-icon="plus" title="添加参考图：尾帧 / 背景图 / 人物资料卡 / 上传其他图片">添加</button></div>
+            <div id="genRefs" class="rr-list"></div>
+          </div>
+          <div class="dock-col model-col">
+            <label title="H3 主模型">模型 <select id="genModel"></select></label>
+            <label title="默认 20；加速 LoRA 可以用更少步数">采样步数 <input id="genSteps" type="number" min="1" max="100" value="20"></label>
+            <div class="row seed-row" title="同样的输入加同一个 Seed，结果相同">Seed <input id="genSeed" type="number" min="0" value="42" class="grow">
+              <button id="genSeedRnd" class="ghostbtn" data-icon="dice" title="随机 seed" aria-label="随机 seed"></button></div>
+            <label title="成片分辨率（H3 生成的大小）：分辨率预设 = 选一档；短边缩放 = 选短边；自由分辨率 = 填宽高。比例跟画幅">输出分辨率 <select id="genResMode">
+              <option value="preset">分辨率预设</option><option value="short">短边缩放</option><option value="free">自由分辨率</option></select></label>
+            <label id="genPresetWrap" title="768p 原生 = H3 官方默认（1344×768）。1080p 未验证：更慢，显存可能不够">档位 <select id="genPreset"></select></label>
+            <label id="genShortWrap" title="H3 生成画面的短边像素：越大越清晰、越慢；长边按画幅比例自动算（面积上限跟着短边放大）">短边 <select id="genShort"></select></label>
+            <label id="genFreeWrap" title="宽 × 高上限（256–3840）：实际生成分辨率按画幅比例放进这个框，每边按 32 取整">宽 <input id="genW" type="number" min="256" max="3840" step="32"> 高 <input id="genH" type="number" min="256" max="3840" step="32"></label>
+            <div class="sub" id="genResHint" style="display:none">自由分辨率只定大小，比例始终跟画幅（粗剪）走：框和画幅比例不一样时，实际输出会比框小一点，见下面。</div>
+            <div class="gen-out" title="成片就是这个大小（H3 直接生成，不再放大）"><span class="go-lbl">成片</span><b id="genRes"></b><span class="go-sub" id="genResSub"></span></div>
+            <label class="chk" title="先按上面的分辨率生成一遍，再在更高分辨率上用一采结果当底精修一遍：主体是原视频的高清像素，时间约翻倍"><input type="checkbox" id="genPass2"> 二次采样（高清）</label>
+            <label id="genPass2ResWrap" title="二采的分辨率（按画幅比例放进去）；不比一采大时跳过二采">二采分辨率 <select id="genPass2Res"></select></label>
+            <label id="genPass2DnWrap" title="二采时重绘区加多少噪声：小 = 基本保持一采只修细节，大 = 改得更多">去噪强度 <input id="genPass2Dn" type="number" min="0.1" max="0.9" step="0.05" value="0.5"></label>
+          </div>
+          <div class="dock-col lora-col">
+            <div class="dock-title">LoRA <button id="loraAdd" class="ghostbtn" data-icon="plus" title="添加 LoRA" aria-label="添加 LoRA"></button></div>
+            <div id="loraRows"></div>
+            <div id="loraMsg" class="sub"></div>
+          </div>
+          <button id="genBtn" class="primary dock-go">生成视频</button>
+        </div>
+
+        <div class="panel" id="refGenPanel">
+          <h3 class="rg-head">图片生成 <span class="sub" id="rgKind"></span>
+            <button id="imgToRes" type="button" class="linkbtn" title="生成出来的图都在「图片结果」里选用">查看结果（<span id="imgResN">0</span>）</button></h3>
+          <div class="eng-row">
+          <div class="seg rg-engine" id="imgEngineSw" role="radiogroup" aria-label="用 ComfyUI 还是云端 API">
+            <button type="button" data-eng="comfy" title="用 ComfyUI 生成（Qwen Image 2.1 或自己的工作流）">ComfyUI</button>
+            <button type="button" data-eng="api" title="用云端平台的图片模型（在设置里选平台、填 key）：只发输入图和提示词">API</button>
+          </div>
+          <button type="button" id="imgFilesBtn" class="ghostbtn eng-files" data-icon="cube" title="选主模型 / 文本编码器 / VAE / PE 用哪个文件（同一模型的不同量化版）">模型文件</button>
+          </div>
+          <div class="api-only rg-api-box">
+            <div class="sub" id="imgApiInfo"></div>
+            <label class="api-model" title="平台上的图片模型；列表里没有时可直接填模型名。改了马上保存">模型
+              <input id="imgApiModel" list="imgApiModels" spellcheck="false" autocomplete="off"><datalist id="imgApiModels"></datalist></label>
+            <label class="api-prompt" title="原样发给平台，软件不加任何句子">提示词<textarea id="imgApiPrompt" rows="5" placeholder="写给平台图片模型的提示词。输入 @ 引用参考图，例如：把 @原图 灰色的空处补成 @背景图 里的背景，不要加人"></textarea></label>
+            <div class="sub">发送：第 1 张 = 这一帧的画面（空的地方是灰色），后面是参考图清单里的图。平台出的整张就是候选。</div>
+          </div>
+          <div class="dock-col">
+            <div class="seg rg-still" id="imgModeSw" role="radiogroup" aria-label="填补还是生成">
+              <button type="button" data-mode="gen" title="整图重绘：图片模型整张重新画，按新的摆放重新打光（默认）">整图重绘</button>
+              <button type="button" data-mode="inpaint" title="局部填补：只重绘补图范围，其余保留原像素">局部填补</button>
+            </div>
+            <div class="row" id="imgRepaintRow" hidden title="局部重绘：圈出要改的地方，出候选时只重绘这块；没圈 = 整张按提示词改">
+              <span>局部重绘</span><span class="sub grow" id="imgRepaintInfo"></span>
+              <button id="imgRepaintDraw" type="button" class="ghostbtn" data-icon="brush">绘制区域</button>
+              <button id="imgRepaintClear" type="button" class="ghostbtn" data-icon="eraser" hidden>清除</button>
+            </div>
+            <div class="row" id="imgFeatherRow" hidden title="羽化：贴回时边缘渐变的像素数，0 = 硬边。只重绘时先对齐洞外颜色">
+              <span>羽化</span><input type="range" id="imgFeather" min="0" max="64" step="1" class="grow"><b id="imgFeatherVal"></b>
+            </div>
+            <div id="genCommonAnchor"></div>
+            <div id="genCommon">
+              <label class="row" id="imgModelRow" title="改图用的 Qwen Image 2.1 模型">模型 <select id="qwenSel" class="grow" hidden></select></label>
+              <div class="row seed-row" title="同样的输入加同一个 Seed，结果相同；空 = 自动（按候选编号）">Seed <input id="imgSeed" type="number" min="0" placeholder="自动" class="grow">
+                <button id="imgSeedRnd" class="ghostbtn" data-icon="dice" title="随机 seed" aria-label="随机 seed"></button></div>
+            </div>
+            <div class="row gen-row"><label title="一次出几张候选（1–8）">候选张数 <input id="imgCount" type="number" value="4" min="1" max="8"></label></div>
+          </div>
+          <div class="dock-col refs-col">
+            <div id="refBlock">
+              <div class="dock-title rr-head" title="编号就是提示词里的 Picture N">参考图<button id="imgRefAdd" type="button" class="ghostbtn rr-add" data-icon="plus" title="添加参考图：背景图 / 上传 / 从项目里选 / 视频当前帧">添加</button></div>
+              <div id="imgRefs" class="rr-list"></div><div id="imgExtra" class="rr-list"></div>
+              <div class="row wrap" hidden>
+                <button id="bgLibrary" type="button" class="ghostbtn" data-icon="image" title="选背景图" aria-label="选背景图"></button>
+                <button id="imgAddTab" type="button" class="ghostbtn" data-icon="images" title="从项目选图" aria-label="从项目选图"></button>
+                <button id="imgAddUp" type="button" class="ghostbtn" data-icon="upload" title="上传参考图" aria-label="上传参考图"></button>
+                <button id="imgAddFrame" type="button" class="ghostbtn" data-icon="film" title="添加当前帧" aria-label="添加当前帧"></button>
+                <input type="file" id="imgUpFile" accept="image/*" multiple hidden>
+              </div>
+            </div>
+            <div id="imgTabPick" hidden><div class="cands"></div></div>
+            <div class="row wrap" hidden>
+              <button id="imgBaseUp" class="ghostbtn" data-icon="upload" title="上传一张要调整的图，代替从视频取的画面">替换原图</button>
+              <button id="imgBaseReset" class="ghostbtn" hidden data-icon="rotate-ccw" title="改回从视频取的画面">恢复视频画面</button>
+              <input type="file" id="imgBaseFile" accept="image/*" hidden>
+            </div>
+          </div>
+          <div class="dock-col wide">
+            <div class="rg-img">
+              <div class="row desc-head"><span title="想要画成什么样；可空，英文效果最好">描述</span><span class="grow"></span>
+                <button id="imgDescVL" class="ghostbtn" data-icon="sparkles" title="Qwen-VL 看原图写描述（会覆盖下面的内容）">自动描述</button></div>
+              <textarea id="imgDesc" rows="2" placeholder="可空，英文效果最好，例如 a woman in a light blue denim jacket"></textarea>
+              <div class="row">
+                <details id="imgSysBox"><summary title="图片模型的系统提示词，一般不用改">高级：系统提示词</summary>
+                  <textarea id="imgSys" rows="6"></textarea>
+                  <div class="row"><button id="imgSysReset" class="ghostbtn" data-icon="rotate-ccw" title="恢复默认" aria-label="恢复默认"></button></div></details>
+              </div>
+            </div>
+            <div class="rg-still">
+              <div class="row" id="imgFillRow" title="空的地方交给图片模型前先填什么：灰色（128）或者背景图">空区填充
+                <span class="seg-radio" role="radiogroup" aria-label="空的地方怎么填">
+                  <label title="灰色 128"><input type="radio" name="imgFill" value="grey" checked>灰色</label>
+                  <label title="先涂上背景图"><input type="radio" name="imgFill" value="bg">背景图</label></span></div>
+              <div id="imgPeRow">
+                <label class="row" title="提示词改写（PE）：先看图把提示词写详细，约多 75 秒。换改图模型时自动切到它的 PE">提示词优化（PE） <select id="imgPe" class="grow"></select></label>
+                <label class="chk" title="被画面边或空区截断的人把身体补全。要补的那边得先在蒙版里拉开重绘范围。先不勾直接生成，补不全时再勾"><input type="checkbox" id="imgBody"> 补全被截断的人物</label>
+                <div class="sub" id="imgBodyHint">先不勾直接生成；图片生成补不全人物时再勾上。</div>
+                <label class="row" id="imgBodyPartsRow" title="特别要补全的部位，写进 PE 指令（英文，比如 hands、legs）">重点部位 <input id="imgBodyParts" class="grow" placeholder="hands"></label>
+                <details id="imgPeBox" hidden><summary title="上次 PE 改写出来的提示词">上次优化后的提示词</summary><div class="sub" id="imgPeText"></div></details>
+              </div>
+            </div>
+          </div>
+          <div class="dock-col rg-bg">
+            <fieldset class="pstep" id="panoStep1">
+              <legend class="sr-only">提取背景</legend>
+              <div class="pstep-head"><span class="pstep-no">1</span>提取背景</div>
+              <label>模式 <select id="panoMode"><option value="frame">指定帧</option><option value="layer" title="只用当前帧的背景图层：主体的地方留空，不从别的帧补，空的全交给第二步">指定帧的背景图层</option><option value="panorama" selected>全景</option></select></label>
+              <details open><summary title="提取背景时排除这些图层">排除图层</summary><div id="panoObjects"></div></details>
+              <button id="panoBtn" class="primary pstep-go" data-icon="scan">提取背景</button>
+              <div class="sub pstep-hint">从视频里扒出一张去掉主体的背景。提取完才能做第 2 步。</div>
+              <div id="panoFrameStale" class="sub warn" hidden>画幅改过了：现在的背景图是按旧画幅提取的，画幅里多出来的地方没有背景（首帧 / 尾帧里是灰的）。请重新「提取背景」再「补全背景」。</div>
+            </fieldset>
+            <div class="pstep-arrow" aria-hidden="true"><span class="ico" data-icon="arrow-down"></span></div>
+            <fieldset class="pstep" id="panoGenerateStep" disabled>
+              <legend class="sr-only">补全背景</legend>
+              <div class="pstep-head"><span class="pstep-no">2</span>补全背景</div>
+              <label>提取结果 <select id="panoExtract"></select></label>
+              <div class="row"><button id="panoPlateUp" class="ghostbtn grow" data-icon="upload" title="替换已提取的背景">替换提取结果</button>
+                <input type="file" id="panoPlateFile" accept="image/*" hidden></div>
+              <div class="mctl" title="空区形状：洞先改成矩形再交给 Qwen，防止补出人影。轮廓 = 照原样；矩形 ×N = 横切 N 段">
+                <div class="mhead"><span class="sw sw-full"></span>空区形状 <span class="grow"></span><b id="panoRectVal">矩形 ×3</b></div>
+                <input type="range" id="panoRect" min="0" max="8" step="1" value="3">
+              </div>
+              <label id="panoPromptRow" title="生成提示词">提示词<textarea id="panoPrompt" rows="3"></textarea></label>
+              <div id="panoPeRow">
+                <label class="chk" title="官方提示词改写模型（PE）先看图把提示词写详细，每次多约 75 秒"><input type="checkbox" id="panoPe" checked> 提示词优化（PE）</label>
+                <details id="panoPeBox" hidden><summary title="上次 PE 改写出来的提示词">上次优化后的提示词</summary><div class="sub" id="panoPeText"></div></details></div>
+              <button id="panoFillBtn" class="primary pstep-go" data-icon="sparkles">补全背景</button>
+              <button id="panoToRes" class="ghostbtn pstep-more" data-icon="chevron-right" title="查看生成结果">查看结果<span class="grow"></span></button>
+            </fieldset>
+          </div>
+          <button id="imgGen" class="primary dock-go">生成候选</button>
+        </div>
+
+        <div class="panel" id="imgResPanel">
+        <h3 class="ires-head"><span id="iresHint">图片结果</span> <span class="sub" id="iresKind"></span>
+</h3>
+          <div class="dock-col wide">
+            <div id="iresInfo" class="res-info"></div>
+            <div id="imgStaleNote" class="warn" hidden></div>
+            <div id="imgCands"></div>
+          </div>
+        </div>
+
+        <div class="panel" id="resPanel">
+          <h3>视频结果 <span class="sub" id="resCount"></span></h3>
+          <div id="resInfo" class="res-info"></div>
+          <div id="resList"></div>
+        </div>
+      </div>
+    </section>
+    <section class="pgroup" data-group="export">
+      <div class="sb-scroll">
+      <div class="panel" id="exportPanel">
+        <h3 title="打包成 zip（不压缩）下载，同时存一份在项目文件夹的 导出export 里">导出</h3>
+        <div class="exp-sec" data-exp="video">
+          <p class="sub">按现在的编辑，准备好这次「生成视频」会交给 H3 的全部素材：粗剪（空处涂灰 / 背景预填）、重绘遮罩、&lt;Video 1&gt;、参考图、提示词、ComfyUI 工作流（文件名已填好）。不调 H3；空区分析开着时要先等看图模型（约 1 分钟，会排队）。</p>
+          <button id="expVideo" class="primary" data-icon="download">导出视频生成素材</button>
+        </div>
+        <div class="exp-sec" data-exp="image">
+          <p class="sub">这一张图交给图片模型的素材：画面（空处涂灰）、空处遮罩、参考图（按 Picture N 顺序）、现在面板上的提示词、Qwen Image 2.1 工作流（文件名已填好）。</p>
+          <button id="expImage" class="primary" data-icon="download">导出改图素材</button>
+        </div>
+        <div class="exp-sec" data-exp="bg"><p class="sub">背景图在「图片结果」里下载。</p></div>
+        <div class="exp-sec" data-exp="ires">
+          <p class="sub">直接下载选用的这张图，文件名和项目「结果」文件夹里的一样。</p>
+          <button id="expCandFile" class="primary" data-icon="download">下载选用的这张</button>
+          <p class="sub exp-sub2">打包下载（zip）：附每张的提示词和参数。</p>
+          <button id="expCand" class="ghostbtn" data-icon="download">打包选用的这张</button>
+          <button id="expCandAll" class="ghostbtn" data-icon="images">打包全部候选</button>
+        </div>
+        <div class="exp-sec" data-exp="res">
+          <p class="sub">直接下载这条成片，文件名和项目「结果」文件夹里的一样。</p>
+          <button id="expResultFile" class="primary" data-icon="download">下载这条视频</button>
+          <p class="sub exp-sub2">打包下载（zip）：成片 + 当时交给 H3 的全部素材（粗剪、遮罩、&lt;Video 1&gt;、参考图、提示词、工作流），可以拿去自己的 ComfyUI 重跑。</p>
+          <button id="expResult" class="ghostbtn" data-icon="download">打包这条结果和素材</button>
+        </div>
+        <div class="row exp-last" id="expLast" hidden><span class="sub grow" id="expLastName"></span><button id="expReveal" class="ghostbtn" data-icon="folder">在文件夹中显示</button></div>
+      </div>
+      </div>
+    </section>
+    <section class="pgroup" data-group="history">
+      <div class="sb-scroll">
+      <div class="panel" id="historyPanel">
+        <h3 class="ver-head" title="操作记录（项目里的 操作记录log.jsonl）：改图层、改画框可恢复到那一步之前，恢复也能撤销">历史 <button type="button" id="histRefresh" class="ghostbtn" data-icon="rotate-ccw" title="刷新" aria-label="刷新"></button></h3>
+        <div id="histList"></div>
+      </div>
+      </div>
+    </section>
+    <section class="pgroup" data-group="versions">
+      <div class="sb-scroll">
+      <div class="panel" id="versionPanel">
+        <h3 class="ver-head">版本 <button type="button" id="verAdd" class="ghostbtn" data-icon="plus" title="新建版本：复制当前版本 / 从原视频新建" aria-label="新建版本"></button></h3>
+        <div id="versions"></div>
+      </div>
+  
+      </div>
+    </section>
+  </div>
+  </div>
+</aside>
+</main>
+
+
+
+
+
+
+<div id="layerMenu" class="ui-menu" hidden></div>
+<div id="imgZoom" class="ui-zoom" hidden><img id="imgZoomImg" alt=""><div class="sub">点任意处关闭</div></div>
+
+<div id="openDlg" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="打开视频或项目">
+  <div class="dlg-card">
+    <div class="dlg-head"><strong>打开视频 / 项目</strong><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <div class="row"><input id="videoPath" class="grow" placeholder="视频文件路径，例如 C:\clips\shot.mp4" aria-label="视频文件路径">
+        <button id="openBtn" class="primary-sm" data-icon="folder">打开视频</button></div>
+      <div class="row"><span class="sub">已有项目</span><select id="projectSel" class="grow"><option value="">— 打开已有项目 —</option></select></div>
+    </div>
+  </div>
+</div>
+
+<div id="modelFilesDlg" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="模型文件">
+  <div class="dlg-card mf-card">
+    <div class="dlg-head"><strong id="mfTitle">模型文件</strong><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <p>同一个模型的不同量化版（bf16 / fp8 / int8 / nvfp4…）用同一个加载节点，直接选文件就行。默认文件不在 ComfyUI 上时，自动用同一模型的其他版本。GGUF 暂不支持。</p>
+      <div id="mfBody"></div>
+    </div>
+    <div class="dlg-foot"><span class="sub grow" id="mfMsg"></span><button id="mfOk" class="primary-sm">完成</button></div>
+  </div>
+</div>
+
+<div id="bgWarnDlg" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="首帧 / 尾帧还没有背景图">
+  <div class="dlg-card">
+    <div class="dlg-head"><strong>首帧 / 尾帧还没有背景图</strong><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <p>现在还没有可用的背景图。生成首帧 / 尾帧时，空出来的地方（移走的图层、画幅外）没法用背景图对齐，做出来的首尾帧可能和原视频对不上，生成视频时背景会出现不自然的突变。</p>
+      <p>建议先到「背景图」生成一张，再回来做首帧 / 尾帧。</p>
+      <label class="chk"><input type="checkbox" id="bgWarnNoMore">不再提示（这个项目）</label>
+    </div>
+    <div class="dlg-foot"><button id="bgWarnGo" class="ghostbtn">去做背景图</button><span class="grow"></span><button id="bgWarnOk" class="primary-sm">知道了</button></div>
+  </div>
+</div>
+
+<div id="leaveShapeDlg" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="正在画的蒙版还没确定">
+  <div class="dlg-card">
+    <div class="dlg-head"><strong>正在画的蒙版还没确定</strong><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <p id="leaveShapeMsg"></p>
+    </div>
+    <div class="dlg-foot"><button id="leaveShapeCancel" class="ghostbtn">取消切换</button><span class="grow"></span><button id="leaveShapeDrop" class="ghostbtn">丢掉</button><button id="leaveShapeKeep" class="primary-sm">建好再切换</button></div>
+  </div>
+</div>
+
+<div id="genApiWarnDlg" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="视频生成切换到云端 API">
+  <div class="dlg-card">
+    <div class="dlg-head"><strong>视频生成切换到云端 API</strong><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <p>测试中 Seedance 补空区不稳定：空的地方可能画出人形，或者保留灰色。仍要使用吗？</p>
+      <label class="chk"><input type="checkbox" id="genApiWarnNoMore">不再提示</label>
+    </div>
+    <div class="dlg-foot"><button id="genApiWarnCancel" class="ghostbtn">取消</button><span class="grow"></span><button id="genApiWarnOk" class="primary-sm">仍然使用 API</button></div>
+  </div>
+</div>
+
+<div id="provView" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="设置">
+  <div class="dlg-card">
+    <div class="dlg-head"><strong>设置</strong><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <section class="settings-section"><h4>通用</h4><p>立即生效</p>
+      <label>界面语言 <select id="prefLanguage"><option value="zh">中文</option><option value="en">English</option></select></label>
+      <label>外观 <select id="prefTheme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label></section>
+      <section class="settings-section"><h4>性能</h4><p>立即生效</p>
+      <label>预览清晰度 <select id="prefPreview">
+        <option value="960">960 宽（最流畅）</option><option value="1280">1280 宽</option><option value="1920">原尺寸（最清楚、最慢）</option></select></label>
+      <p class="sub">只影响画布显示；生成和导出都用工作分辨率（见下）。</p>
+      <label>分段预览清晰度 <select id="prefSeqPreview">
+        <option value="640">长边 640（最快）</option><option value="960">长边 960</option><option value="1280">长边 1280（默认）</option><option value="1920">长边 1920（最清楚）</option></select></label>
+      <p class="sub">长片段分段页播放用的预览。改了以后，下次打开分段页时重做预览（短视频几秒，长视频要等一会）；不影响导出。</p>
+      <label>导入视频的工作分辨率 <select id="prefWork">
+        <option value="1280">长边 1280（最快）</option><option value="1920">长边 1920（默认）</option><option value="2560">长边 2560</option><option value="0">原尺寸（不缩，4K 会很慢）</option></select></label>
+      <p class="sub">导入时视频长边超过它就先缩小，识别、蒙版、生成都按缩小后的视频算；原视频留在项目文件夹里。只影响之后新建的项目。</p>
+      <label>后台的项目标签 <select id="prefKeep">
+        <option value="1">切走就放掉（省内存）</option><option value="2">最近 2 个项目常驻（来回切更快，多占内存）</option></select></label>
+      <p class="sub">顶栏可以开多个项目标签；只有正在看的项目真正载入。常驻：切回最近那个项目不用重新载入，内存大约多占 1–4 GB。</p>
+      <label class="chk" title="记下每次改图层、合并、删除、识别、生成（只存本机，超过 5 MB 另起一个文件）"><input type="checkbox" id="prefActLog" checked> 记录操作（存在项目文件夹的 操作记录log.jsonl）</label>
+      <label class="chk" title="任务结束后删掉传到 ComfyUI 的素材（项目里有完整一份）。需新版 ComfyUI-Reframe"><input type="checkbox" id="prefCleanUp" checked> 任务结束后删除上传到 ComfyUI 的素材</label>
+      </section><section class="settings-section"><h4>缓存</h4><p>可以随时清，重开项目时重算</p>
+      <p class="sub">抠图、分区、缩略图存在项目的「缓存cache」文件夹里，长期能到几 GB；清掉不影响项目、图层和生成结果，下次打开这个项目重新算一遍。</p>
+      <div class="row"><span id="cacheInfo" class="sub" role="status">—</span><span class="grow"></span><button id="cacheClear" class="ghostbtn">清理缓存</button></div>
+      </section><section class="settings-section"><h4>服务连接</h4>
+      <div id="serviceStatus" class="sub" role="status"></div><button id="serviceCheck" class="ghostbtn">检查服务状态</button>
+      <h4>云端 API</h4>
+      <p class="sub">只给图片生成 / 视频生成面板的「API」用，其余都走 ComfyUI。软件不内置平台：照平台的接口文档，在下面「接口配置」里按三种格式之一填一份。效果不保证。</p>
+      <label title="平台 = 一份接口配置（见下面「接口配置」）。换平台会把地址、模型名换成那份配置里的">平台 <select id="provKind"></select></label>
+      <label>Base URL <input id="provBase"></label>
+      <label>图片模型 <input id="provImg"></label>
+      <label>改图输出尺寸 <select id="provSize">
+        <option value="match">按原图比例补边再裁回（不拉伸）</option><option value="auto" id="provSizeAuto">auto（交给平台）</option></select></label>
+      <label title="存在本机 api_keys.local.json（每个平台一个，不上传）；保存后只显示尾号">API key <input id="provKeyIn" type="password" autocomplete="off" spellcheck="false"></label>
+      <div class="row"><span id="provKey" class="sub grow"></span><button id="provKeyClear" class="ghostbtn" hidden>清除 key</button></div>
+      <details id="provAdv"><summary title="请求怎么发、结果在哪：按三种接口格式之一填，改完点「保存为平台」">接口配置 <span class="sub" id="provFmt"></span></summary>
+        <p class="sub">format：openai_edits（OpenAI 改图，上传文件）/ json_sync（JSON 里放图、直接返回）/ async_task（提交拿任务号、再轮询；只有这种能做视频生成）。字段说明见 docs/安装.md「云端 API」。</p>
+        <label>从模板新建 <select id="provTpl"><option value="">选接口格式…</option><option value="openai_edits">openai_edits</option><option value="json_sync">json_sync</option><option value="async_task">async_task</option></select></label>
+        <textarea id="provProfile" rows="12" spellcheck="false"></textarea>
+        <div class="row"><button id="provProfileSave" class="ghostbtn" data-icon="plus">保存为平台…</button><span class="grow"></span><button id="provProfileDel" class="ghostbtn" data-icon="trash" hidden>删除这个平台</button></div>
+      </details>
+      <div id="provMsg" class="sub" role="status"></div>
+      <div class="row"><button id="provCheck" class="ghostbtn">测试连接</button><button id="provSave" class="primary-sm">保存连接设置</button></div></section>
+      <section class="settings-section"><h4>界面与帮助</h4>
+      <div class="row"><button id="resetLayout" class="ghostbtn">恢复默认布局</button><button id="settingsHelp" class="ghostbtn">快捷键</button></div>
+      <p>恢复侧栏宽度和任务窗位置，不改项目或生成设置。</p>
+      <div id="settingsVersion" class="sub"></div></section>
+    </div>
+    <div class="dlg-foot"><span class="grow"></span><button id="provCancel">关闭</button></div>
+  </div>
+</div>
+
+<div id="guideDlg" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="新手教程">
+  <div class="dlg-card">
+    <div class="dlg-head"><strong>新手教程</strong><span id="guideCount" class="guide-count"></span><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <img id="guideImg" alt="">
+      <h3 id="guideTitle"></h3>
+      <p id="guideText"></p>
+    </div>
+    <div class="dlg-foot"><a id="guideMore" class="ghostbtn" target="_blank" rel="noopener">完整教程</a><span id="guideDots" class="guide-dots"></span><span class="grow"></span><button id="guidePrev" class="ghostbtn">上一步</button><button id="guideNext" class="primary-sm">下一步</button></div>
+  </div>
+</div>
+
+<div id="help" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="快捷键">
+  <div class="dlg-card">
+    <div class="dlg-head"><strong>快捷键</strong><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <table class="keys">
+        <tr><td>点击 / Shift+点击</td><td>选中 / 加选主体</td></tr>
+        <tr><td>拖动框内 / 四角 / 四边 / 上方圆点</td><td>移动 / 缩放 / 单向缩放 / 旋转</td></tr>
+        <tr><td>方向键 / Shift+方向键</td><td>微调 1 / 10 像素（未选中时逐帧）</td></tr>
+        <tr><td>Ctrl+] / Ctrl+[ · Ctrl+Shift+] / [</td><td>上移 / 下移一层 · 置顶 / 置底</td></tr>
+        <tr><td>M · A · H</td><td>重绘范围 · Alpha 视图 · 隐藏 / 显示选中图层</td></tr>
+        <tr><td>Delete</td><td>删除选中图层（会先确认）</td></tr>
+        <tr><td>Ctrl+Z / Ctrl+Shift+Z</td><td>撤销 / 重做</td></tr>
+        <tr><td>Esc</td><td>取消选中 / 关闭浮层</td></tr>
+        <tr><td>空格 · , / . · I / O</td><td>播放 · 逐帧 · 设起止</td></tr>
+        <tr><td>按住 C</td><td>看原视频</td></tr>
+        <tr><td>滚轮 / Ctrl+滚轮</td><td>以鼠标为中心缩放</td></tr>
+        <tr><td>按住空格拖动 / 中键</td><td>平移画布</td></tr>
+        <tr><td>Shift+0 · 1 · 2 · Ctrl+1</td><td>适应画幅 · 显示全部 · 适应选中 · 100%</td></tr>
+        <tr><td>Ctrl+= / Ctrl+-</td><td>放大 / 缩小</td></tr>
+        <tr><td>F</td><td>编辑画幅</td></tr>
+        <tr><td>P · L</td><td>滚到「蒙版」 · 打开右侧栏的图层面板</td></tr>
+        <tr><td>逐帧修整</td><td>B 画笔 · E 橡皮（Alt 切换）· [ ] 大小 · Ctrl+Z 撤销 · , . 换帧 · Enter 保存 · Esc 取消</td></tr>
+      </table>
+    </div>
+    <div class="dlg-foot"><span class="grow"></span><button id="helpClose" class="primary-sm">知道了</button></div>
+  </div>
+</div>
+
+<div id="hiddenStatus" hidden>
+<div class="panel" id="statusPanel">
+        <h3>运行日志</h3>
+        <ol id="stepList" hidden></ol>
+        <div id="progBox" hidden>
+          <div class="pbar"><div id="progFill"></div></div>
+          <div id="progText"></div>
+        </div>
+        <pre id="log">空闲</pre>
+        <div class="row"><button id="stopBtn2" class="ghostbtn danger" data-icon="stop" title="停止当前任务">停止任务</button></div>
+      </div>
+</div>
+<div id="uiToast" hidden role="status" aria-live="polite"></div>
+
+<!-- 所有结果（ui/gallery.js）：所有项目的视频结果和图片，按时间从新到旧 -->
+<div id="gallery" hidden>
+  <div class="gl-head">
+    <b class="gl-title">所有结果</b>
+    <div class="gl-seg" role="group" aria-label="类型">
+      <button type="button" data-f="all" class="on">全部</button><button type="button" data-f="video">视频</button><button type="button" data-f="image">图片</button>
+    </div>
+    <select id="glProj" aria-label="项目"><option value="">所有项目</option></select>
+    <label class="gl-all" title="不勾：每张图片只显示选用的那张；勾上：显示所有候选"><input type="checkbox" id="glAll"> 显示全部候选</label>
+    <span class="gl-count"></span>
+    <span class="grow"></span>
+    <button type="button" class="icon-btn gl-x" data-icon="x" title="关闭（Esc）" aria-label="关闭"></button>
+  </div>
+  <div class="gl-grid"></div>
+</div>
+<!-- 长片段分段页（ui/sequence.js）：整条预览 + 分段轨道 + 这一段的信息；每段是一个普通项目 -->
+<div id="seqView" hidden>
+  <div class="sq-head">
+    <button id="seqBack" class="ghostbtn" hidden title="回到刚才在编辑的那一段（Esc）"><span data-icon="chevron-left"></span><span id="seqBackTxt"></span></button>
+    <span class="ico" data-icon="film"></span><b id="seqName"></b><span class="sub" id="seqInfo"></span>
+    <span class="grow"></span>
+    <button id="seqExport" class="primary-sm" title="按顺序拼成全片：每段用右边选的结果，没改的用原视频">导出全片</button>
+    <button id="seqReveal" class="icon-btn" data-icon="folder" title="在资源管理器中显示（最新导出的全片）" aria-label="在资源管理器中显示"></button>
+    <button id="seqClose" class="icon-btn" data-icon="x" title="关闭这个长片段（关掉它的标签）" aria-label="关闭这个长片段"></button>
+  </div>
+  <div class="sq-body">
+    <div class="sq-main">
+      <div class="sq-player"><video id="seqVideo" playsinline></video><span id="seqRes" class="sq-res" hidden></span></div>
+      <div class="sq-ctrl">
+        <button id="seqPlay" class="icon-btn" data-icon="play" title="播放 / 暂停（空格）" aria-label="播放 / 暂停"></button>
+        <span id="seqTime" class="sub"></span>
+        <span class="grow"></span>
+        <button id="seqAuto" class="ghostbtn" title="按镜头切换重新分段，太长的平均切开（已经在编辑的段不动）">自动按镜头切</button>
+        <button id="seqCut" class="primary-sm" title="在播放头（红线）这一帧加一个切点，把这一段切成两段（S）；也可以在下面缩略图条上双击">＋ 添加切点 (S)</button>
+      </div>
+      <div class="sq-label sub">分段 · 拖竖线调整切点，缩略图条上双击添加切点</div>
+      <div class="sq-track">
+        <div id="seqSegs" class="sq-segs"></div>
+        <div id="seqStrip" class="sq-strip"><img id="seqStripImg" alt=""></div>
+        <div id="seqCuts" class="sq-cuts"></div>
+        <i id="seqHead" class="sq-head-line"></i>
+      </div>
+    </div>
+    <div class="sq-side">
+      <b id="seqSegTitle"></b>
+      <div id="seqSegMeta" class="sub"></div>
+      <button id="seqOpenSeg" class="primary-sm">编辑这一段</button>
+      <label class="sq-use">全片里用 <select id="seqUse"></select></label>
+      <button id="seqLock" class="ghostbtn sq-lock"></button>
+      <button id="seqMerge" class="ghostbtn" title="去掉这一段和下一段之间的切点">和下一段合并</button>
+      <div class="sub sq-tip">每段是一个独立的项目：照常识别、编辑、生成。已经开始编辑的段改切点时，它的项目会先移到回收站、再按新范围重新剪。</div>
+    </div>
+  </div>
+</div>
+<div id="seqAskDlg" class="ui-dialog" hidden role="dialog" aria-modal="true" aria-label="分段编辑">
+  <div class="dlg-card">
+    <div class="dlg-head"><strong>这段视频比较长</strong><button class="dlg-close icon-btn" data-icon="x" title="关闭" aria-label="关闭"></button></div>
+    <div class="dlg-body">
+      <p id="seqAskText"></p>
+      <p class="sub">分段编辑：按镜头切换自动切开，太长的再平均切开，每段单独编辑和生成，最后拼回全片。识别和生成都快很多。</p>
+    </div>
+    <div class="dlg-foot"><button id="seqAskWhole" class="ghostbtn">整段编辑</button><span class="grow"></span><button id="seqAskSplit" class="primary-sm">分段编辑</button></div>
+  </div>
+</div>
+<div id="doneToast" hidden role="status" aria-live="polite">
+  <span class="dt-text"></span><button type="button" class="dt-go">查看</button><button type="button" class="dt-x" data-icon="x" aria-label="关闭"></button>
+</div>
+
+<script src="ui/i18n-en.js"></script>
+<script src="ui/i18n-en-msgs.js"></script>
+<script src="ui/i18n.js"></script>
+<script src="ui/icons.js"></script>
+<script src="app/01-core.js"></script>
+<script src="app/02-canvas.js"></script>
+<script src="app/03-layers.js"></script>
+<script src="app/04-interact.js"></script>
+<script src="app/05-project.js"></script>
+<script src="app/06-viewport.js"></script>
+<script src="app/07-refine.js"></script>
+<script src="app/07b-shape.js"></script>
+<script src="app/07c-pcache.js"></script>
+<script src="app/07d-reflist.js"></script>
+<script src="app/07e-mention.js"></script>
+<script src="app/08-imagetabs.js"></script>
+<script src="app/09-generate.js"></script>
+<script src="ui/task-window.js"></script>
+<script src="ui/shell.js"></script>
+<script src="ui/ptabs.js"></script>
+<script src="ui/gallery.js"></script>
+<script src="ui/sequence.js"></script>
+<script src="ui/tools.js"></script>
+<script src="ui/settings.js"></script>
+<script src="ui/guide.js"></script>
+</body>
+</html>
