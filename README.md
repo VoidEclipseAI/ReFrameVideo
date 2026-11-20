@@ -6,7 +6,7 @@ English · [中文](README_zh.md) · [LoRA](https://huggingface.co/VoidEclipseAI
 
 **An open-source toolkit for editing and regenerating video frames: change anything, freely.**
 
-https://github.com/user-attachments/assets/5c496e3d-a9b6-4652-b1fe-17c0c9f9f3dc
+https://github.com/user-attachments/assets/8cbb910d-248c-41c0-be0c-d0c10e85afd0
 
 <sub>The promo uses film clips, shown only to demonstrate the tool. All rights belong to their owners.</sub>
 

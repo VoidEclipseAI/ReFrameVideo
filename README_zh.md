@@ -6,7 +6,7 @@
 
 **开源的视频画面编辑与生成：自由改动画面里的一切。**
 
-https://github.com/user-attachments/assets/5c496e3d-a9b6-4652-b1fe-17c0c9f9f3dc
+https://github.com/user-attachments/assets/8cbb910d-248c-41c0-be0c-d0c10e85afd0
 
 <sub>宣传片中的画面来自电影片段，仅用于演示效果，版权归原作者所有。</sub>
 
