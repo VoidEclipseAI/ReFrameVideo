@@ -1426,7 +1426,7 @@ window.UI_EN = {
   "图片模型": "Image model",
   "请求怎么发、结果在哪：按三种接口格式之一填，改完点「保存为平台」": "How requests are sent and where results come back: fill in one of three API formats, then click Save as provider",
   "接口配置": "API config",
-  "format：openai_edits（OpenAI 改图，上传文件）/ json_sync（JSON 里放图、直接返回）/ async_task（提交拿任务号、再轮询；只有这种能做视频生成）。字段说明见 docs/安装.md「云端 API」。": "format: openai_edits (OpenAI image edit, file upload) / json_sync (images in JSON, returned directly) / async_task (submit for a task ID, then poll; the only one that can do video generation). Fields are explained in the install guide (Chinese), “Cloud API”.",
+  "format：openai_edits（OpenAI 改图，上传文件）/ json_sync（JSON 里放图、直接返回）/ async_task（提交拿任务号、再轮询；只有这种能做视频生成）。字段说明见 docs/安装.md「云端 API」。": "format: openai_edits (OpenAI image edit, file upload) / json_sync (images in JSON, returned directly) / async_task (submit for a task ID, then poll; the only one that can do video generation). Fields are explained in docs/INSTALL.md, “Cloud API”.",
   "从模板新建": "New from template",
   "选接口格式…": "Pick an API format…",
   "保存为平台…": "Save as provider…",

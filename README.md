@@ -2,7 +2,7 @@
 
 # ReFrameVideo
 
-English · [中文](README_zh.md) · [LoRA](https://huggingface.co/VoidEclipseAI/ReFrameVideo-LoRA) · [Installation](docs/安装.md) (Chinese) · [Tutorial](web/ui/tutorial-en.md)
+English · [中文](README_zh.md) · [LoRA](https://huggingface.co/VoidEclipseAI/ReFrameVideo-LoRA) · [Installation](docs/INSTALL.md) · [Tutorial](web/ui/tutorial-en.md)
 
 **An open-source toolkit for editing and regenerating video frames: change anything, freely.**
 
@@ -27,7 +27,7 @@ ReFrameVideo is an open-source personal project that lets you freely change the 
 
 You need Python 3.10+, [FFmpeg](https://ffmpeg.org/) (on PATH) and a machine with ComfyUI (can be this one).
 
-1. **Set up ComfyUI**: install the models listed in the [installation guide](docs/安装.md) (Chinese; the tables are easy to follow); copy `comfyui/ComfyUI-Reframe/` into ComfyUI's `custom_nodes/`; put the ReFrameVideo LoRA ([Hugging Face](https://huggingface.co/VoidEclipseAI/ReFrameVideo-LoRA) / [ModelScope](https://modelscope.cn/models/VoidEclipseAI/ReFrameVideo-LoRA)) in `models/loras/`.
+1. **Set up ComfyUI**: install the models listed in the [installation guide](docs/INSTALL.md); copy `comfyui/ComfyUI-Reframe/` into ComfyUI's `custom_nodes/`; put the ReFrameVideo LoRA ([Hugging Face](https://huggingface.co/VoidEclipseAI/ReFrameVideo-LoRA) / [ModelScope](https://modelscope.cn/models/VoidEclipseAI/ReFrameVideo-LoRA)) in `models/loras/`.
 2. **Download and start**:
 
    ```bash
