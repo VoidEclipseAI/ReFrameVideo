@@ -177,6 +177,8 @@ The "This image" settings in Image editing apply only to that reference image. T
 - In Image results: Download the selected one, Zip the chosen one, or Zip all candidates.
 - In Video results: Download this video, or Zip this result and its inputs.
 
+Step by step: [Run in your own ComfyUI](tutorial-comfyui-en.md).
+
 Exported zip files are also saved in the `导出export` folder inside the project folder. Use Show in folder to find the files.
 
 **History:** The History panel lists each step from the project's action log. Layer and frame edits can be restored with Restore to before. Restoring is also a step, so you can undo it. Merges, deletes, detection, and generation are listed but cannot be restored. You can turn off action logging in Settings → Performance.

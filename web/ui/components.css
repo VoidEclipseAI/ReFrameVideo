@@ -1050,11 +1050,12 @@ html:not([lang="en"]) #sidebar :is(#maskPanel, #mattePanel) .mrow .ml { white-sp
 /* 视频生成：模型 / 步数 / Seed / 分辨率都在灰框里，和「空区分析」一样标签在左、控件在右（2026-11-17 用户定）。
    标签是文字节点，用 grid 排成两列；「宽 [ ] 高 [ ]」自动排成两行。 */
 #sidebar #genPanel .model-col > label:not(:has(input[type="checkbox"])), #sidebar #genPanel .gp-vl {
-  display: grid; grid-template-columns: var(--gen-lbl, 72px) minmax(0, 1fr); align-items: center; gap: 8px; }
+  display: grid; grid-template-columns: var(--gen-lbl, 84px) minmax(0, 1fr); align-items: center; gap: 8px; }
 #sidebar #genPanel :is(.model-col, .gp-vl) > label > :is(select, input), #sidebar #genPanel .gp-vl > select { width: 100%; min-width: 0; }
-#sidebar #genPanel .model-col > .seed-row { display: grid; grid-template-columns: var(--gen-lbl, 72px) minmax(0, 1fr) auto; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--text); }
+#sidebar #genPanel .model-col > .seed-row { display: grid; grid-template-columns: var(--gen-lbl, 84px) minmax(0, 1fr) auto; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--text); }
 #sidebar #genPanel .model-col > .seed-row input { width: 100%; background: var(--panel); }
 html[lang="en"] #sidebar #genPanel { --gen-lbl: 118px; }
+#sidebar #genPanel .model-col > [hidden] { display: none !important; }   /* 二采没勾时藏掉二采分辨率 / 去噪强度（上面的 display 会盖掉 hidden） */
 /* 导出：直接下载（主按钮）在上，打包 zip 在下面 */
 #exportPanel .exp-sec .exp-sub2 { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
 #exportPanel .exp-sec .ghostbtn { border: 1px solid var(--line); }
@@ -1066,6 +1067,7 @@ html[lang="en"] #sidebar #genPanel { --gen-lbl: 118px; }
 body.gen-wf #genPanel .lora-col,
 body.gen-wf #genPanel label:has(> #genSteps),
 body.gen-wf #genPanel label:has(> #genPass2),
+body.gen-wf #genPanel label:has(> :is(#genBodyRedraw, #genColorFix)),
 body.gen-wf #genPanel :is(#genPass2ResWrap, #genPass2DnWrap) { display: none !important; }
 
 /* ComfyUI | API 切换 + 右边「模型文件」按钮（2026-11-18）；切到 API 时藏掉按钮 */

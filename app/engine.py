@@ -80,8 +80,8 @@ H3_SHORTS = (480, 544, 640, 720, 768, 864, 1024, 1088)   # 「短边缩放」可
 H3_MODES = ("preset", "short", "free")
 H3_MODE = "preset"
 # 预设：标准画面框（横屏；竖屏宽高对调），按画幅比例整个放进框里，每边取 32 的倍数。768p = H3 官方默认画布（短边 768 + 面积上限，
-# 官方称 1344×768 是训练尺寸）。官方没有 480p / 720p / 1080p 表；1080p 超出训练尺寸，没在 4090 上验证过。
-H3_PRESETS = {"480": (854, 480), "540": (960, 540), "720": (1280, 720), "768": None, "1080": (1920, 1080)}
+# 官方称 1344×768 是训练尺寸）。官方没有 480p / 720p / 960p / 1080p 表；960p / 1080p 超出训练尺寸，没在 4090 上验证过。
+H3_PRESETS = {"480": (854, 480), "540": (960, 540), "720": (1280, 720), "768": None, "960": (1706, 960), "1080": (1920, 1080)}
 H3_PRESET = "768"
 H3_FREE = (1344, 768)            # free 模式的宽高上限（按画幅比例放进去，每边 32 的倍数）
 H3_FREE_MIN, H3_FREE_MAX = 256, 3840
@@ -769,6 +769,18 @@ class ComfyEngine:
             self._nodes_seen.add(name)
         return ok
 
+    def node_has_input(self, name, inp):
+        """ComfyUI 上这个节点有没有某个输入（旧版节点包没有新加的输入时，提示用户更新）。只缓存“有”。"""
+        key = f"{name}.{inp}"
+        if key in self._nodes_seen:
+            return True
+        r = self._req("GET", f"{self.url}/object_info/{name}", timeout=30, give_up=20)
+        spec = (r.json().get(name) or {}).get("input", {}) if r.ok else {}
+        ok = any(inp in (spec.get(k) or {}) for k in ("required", "optional"))
+        if ok:
+            self._nodes_seen.add(key)
+        return ok
+
     # ---------- H3 LoRA ----------
     def list_loras(self):
         """ComfyUI loras 文件夹里的全部 LoRA（LoraLoaderModelOnly 的可选项）。"""
@@ -1443,19 +1455,30 @@ class ComfyEngine:
         工作流里 ThresholdMask 0.5 会二值化，所以中间值没有意义。p.mask 必须是所有区域的并集。"""
         info, mpath, counts = self.write_inpaint_inputs(p, work, meta, levels, log)
         F, n = info["F"], info["n"]
+        part = getattr(p, "partial", None)
+        if part is not None:
+            self._need_partial()
         if len(p.refs) > 9:
             log(f"  注意：H3 最多收 9 张参考图，后面 {len(p.refs) - 9} 张没发（提示词里的对应 Picture 编号会落空）")
         refs = [self._upload(Path(r)) for r in p.refs[:9]]
         vids = [self._upload(Path(v)) for v in list(ref_videos)[:3]]
         graph, out_node = self.build_h3_graph(self._upload(work / "h3_input.mp4"), self._upload(mpath), p.prompt,
-                                              F, info["fps"], p.seed, refs, ref_video_names=vids)
+                                              F, info["fps"], p.seed, refs, ref_video_names=vids,
+                                              partial_name=self._upload(info["partial"]) if part is not None else None,
+                                              partial_strength=part[1] if part is not None else 0.0)
         (work / "comfy_graph.json").write_text(json.dumps(graph, ensure_ascii=False, indent=1), encoding="utf-8")
         self.write_inputs_used(work, graph, p, [f"重绘区像素数 {counts}",
-                                                f"原片 {n} 帧 → 补到 {F} 帧，{info['fps']} fps"])
+                                                f"原片 {n} 帧 → 补到 {F} 帧，{info['fps']} fps"]
+                               + ([f"主体重绘强度 {part[1]:.2f}：本体（保护蒙版除外）部分重绘（h3_partial_mask.mov）"] if part is not None else []))
         first = self._download(self._run(graph, log), out_node, work)[0]
         if getattr(p, "pass2", None):
             return self.second_pass(p, work, meta, levels, first, log, ref_videos)
         return first
+
+    def _need_partial(self):
+        if not self.node_has_input(self.H3_MASK_NODE, "partial_mask"):
+            raise RuntimeError("「主体重绘强度」要新版节点包：把本仓库 comfyui/ComfyUI-Reframe 整个文件夹覆盖拷到 ComfyUI 的 "
+                               "custom_nodes 下，重启 ComfyUI（或把主体重绘强度调回 0）")
 
     def second_pass(self, p, work, meta, levels, first, log=print, ref_videos=()):
         """二次采样（2026-11-18 用户定，默认关）：一采的结果放大到二采分辨率当底，在更高分辨率上再跑一遍 H3，只在重绘区加噪，
@@ -1482,16 +1505,24 @@ class ComfyEngine:
         for lv, _ in levels:                              # 一采的重绘区（各强度的并集），放大到二采画布
             m |= np.stack([cv2.resize(x.astype(np.uint8), (W2, H2), interpolation=cv2.INTER_NEAREST) > 0 for x in lv])
         m = pad(m)
+        part = getattr(p, "partial", None)
+        pm = None
+        if part is not None:                              # 主体部分重绘过：二采也用一采结果当底、同样部分重绘，不然又变回原片的光
+            pm = pad(np.stack([cv2.resize(x.astype(np.uint8), (W2, H2), interpolation=cv2.INTER_NEAREST) > 0 for x in part[0]])) & ~m
+            base[pm] = up[pm]
         base[m] = up[m]                                   # 重绘区用一采结果当底，保留区用高清原像素
         write_video(work2 / "h3_input.mp4", base, fps, crf=10)
         if getattr(p, "audio", None) is not None:
             add_audio(work2 / "h3_input.mp4", p.audio, fps)
         mpath = write_pixel_mask(work2 / "h3_pixel_mask.mov", m.astype(np.uint8) * 255, fps)
+        ppath = write_pixel_mask(work2 / "h3_partial_mask.mov", pm.astype(np.uint8) * 255, fps) if pm is not None else None
         log(f"  二次采样：{W1}x{H1} → {W2}x{H2}，{F} 帧，重绘区 {m.mean() * 100:.0f}% 用一采结果当底、只在这里加噪，denoise {d}")
         refs = [self._upload(Path(r)) for r in p.refs[:9]]
         vids = [self._upload(Path(v)) for v in list(ref_videos)[:3]]
         graph, out_node = self.build_h3_graph(self._upload(work2 / "h3_input.mp4"), self._upload(mpath), p.prompt,
-                                              F, fps, p.seed, refs, ref_video_names=vids, denoise=d)
+                                              F, fps, p.seed, refs, ref_video_names=vids, denoise=d,
+                                              partial_name=self._upload(ppath) if ppath else None,
+                                              partial_strength=part[1] if ppath else 0.0)
         (work2 / "comfy_graph.json").write_text(json.dumps(graph, ensure_ascii=False, indent=1), encoding="utf-8")
         self.write_inputs_used(work2, graph, p, [f"二次采样：一采 {W1}x{H1} → 二采 {W2}x{H2}，denoise {d}",
                                                  f"二采的底：重绘区 = 一采结果放大（{first.name}），其余 = 合成输入的高清像素"])
@@ -1558,6 +1589,11 @@ class ComfyEngine:
         counts = {int(v): int((pix == v).sum()) for _, v in levels}
         log(f"  H3 画布 {W}x{H}，{n}→{F} 帧；各强度的像素数 {counts}；像素 mask 交给 ComfyUI 里的 Reframe H3 Inpaint Mask 转潜空间")
         mpath = write_pixel_mask(work / "h3_pixel_mask.mov", pix, info["fps"])
+        part = getattr(p, "partial", None)
+        if part is not None:                             # 主体重绘强度：本体（保护蒙版除外）部分重绘，同样交给节点按格换算
+            pm = pad(rs(part[0])) & (pix == 0)
+            info["partial"] = write_pixel_mask(work / "h3_partial_mask.mov", pm.astype(np.uint8) * 255, info["fps"])
+            log(f"  主体重绘强度 {part[1]:.2f}：部分重绘的本体像素 {int(pm.sum())}（h3_partial_mask.mov）")
         return info, mpath, counts
 
     # ---------- H3 局部重绘 ----------
@@ -1584,7 +1620,7 @@ class ComfyEngine:
     H3_MASK_NODE = "ReframeH3InpaintMask"   # 节点包 ComfyUI-Reframe（本仓库 comfyui/ComfyUI-Reframe，V3 写法，无第三方依赖）
 
     def build_h3_graph(self, video_name, mask_name, prompt, F, fps, seed, ref_names=(), ref_video_names=(), steps=None, check_nodes=True,
-                       denoise=1.0):
+                       denoise=1.0, partial_name=None, partial_strength=0.0):
         """合成用的 H3 工作流：像素 mask → ReframeH3InpaintMask（按 H3 的 32px 格 / 时间组换算潜空间 mask，
         直接带在 latent 上）→ 采样 → 解码。画布 = h3_input.mp4 整幅。音频那一半取 ReferenceToVideo 的空音频。
         LoRA / 主模型照「视频生成」栏的设置（_apply_loras / self.unet）。
@@ -1607,8 +1643,13 @@ class ComfyEngine:
                                "整个文件夹拷到 4090 ComfyUI 的 custom_nodes 下，重启 ComfyUI")
         size = node(41, "GetImageSize", image=[src, 0])
         encoded = node(10, "VAEEncode", pixels=[src, 0], vae=[vae, 0])
+        extra = {}
+        if partial_name and partial_strength > 0:      # 主体重绘强度：节点把这些格的 noise mask 设成 strength（H3 按 m·sigma 部分重绘）
+            pvid = node(71, "GetVideoComponents", video=[node(70, "LoadVideo", file=partial_name), 0])
+            extra = dict(partial_mask=[node(72, "ImageToMask", image=[pvid, 0], channel="red"), 0],
+                         partial_strength=round(float(partial_strength), 3))
         masked = node(42, self.H3_MASK_NODE, samples=[encoded, 0], vae=[vae, 0], redraw_mask=[redraw, 0],
-                      conflict="redraw")
+                      conflict="redraw", **extra)
         # 2026-11-10 去掉本体 mask（protect_mask）：conflict=redraw 时节点按格只看 redraw（final = r），本体 mask 从来不改结果；
         # 00ca / 592e 试验去掉后成片几乎一样（tests/简化/）。不重绘的地方本来就不在像素 mask 里（本体、保护蒙版都是 0）。
         r2v = dict(clip=[clip, 0], vae=[vae, 0], audio_vae=[avae, 0], prompt=prompt, width=[size, 0], height=[size, 1],

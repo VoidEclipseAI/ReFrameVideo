@@ -59,3 +59,20 @@ def map_masks(redraw, body, groups, policy):
         "note": "Mask coverage only; not the VAE receptive field or a pixel-preservation guarantee",
     }
     return latent, actual, conflict_view, report
+
+
+def partial_cells(partial, groups, strength, full_latent):
+    """Partial-redraw cells: a cell holding any `partial` pixel, in any frame of its group, gets `strength`
+    (0..1) in the latent noise mask unless it is already fully repainted. MiniMax H3 in ComfyUI runs a token
+    with mask value m at m * sigma every step, so the cell is redrawn partially (img2img-like) while
+    keeping its content. Returns (latent mask with the partial cells merged, partial-only cell map, count)."""
+    if partial.ndim != 3 or not ((partial == 0) | (partial == 1)).all():
+        raise ValueError("partial mask must be binary [frames,height,width]; threshold explicitly upstream")
+    if not 0.0 <= float(strength) <= 1.0:
+        raise ValueError(f"partial strength must be within 0..1; got {strength}")
+    spatial = F.max_pool2d(partial.float().cpu()[:, None], 32, 32)[:, 0]
+    cells = torch.stack([spatial[s:e].amax(0) for s, e in groups]) > 0
+    lat = cells.float().repeat_interleave(2, 1).repeat_interleave(2, 2)
+    only = (lat > 0) & (full_latent <= 0)
+    merged = torch.where(only, torch.full_like(full_latent, float(strength)), full_latent)
+    return merged, cells & ~(full_latent[:, ::2, ::2] > 0), int(only[:, ::2, ::2].sum())

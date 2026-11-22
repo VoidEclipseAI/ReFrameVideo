@@ -296,12 +296,15 @@ def facts(p, replaced=(), vid=None):
     return dict(main=main, tiny=tiny, removed=removed, vacated=sorted(set(vacated)), edits=edits, ext=ext, passing=passing)
 
 
-def fill_prompt(p, refs, holes, camera=None, replaced=()):
+def fill_prompt(p, refs, holes, camera=None, replaced=(), relight=False):
     """补瑕疵的写法（2026-10-29 用户定）：对比首帧是为了知道粗剪里每块瑕疵该怎么补，所以提示词只讲「怎么补」——
     <Video 1> 里人、大小、位置、动作都已经对了，照着走；灰的地方是缺的像素，逐块写该补成什么；别的不加。
     不写「和原片比移动了 / 缩小了」（H3 会当成镜头里发生的动作，人慢慢变小）。
     holes = [{"where": "on the left side of the frame", "what": "rows of red cinema seats"}, …]：粗剪第 1 帧的灰块（按连通区域分开），
-    每块在首帧上高亮、问 VLM 这里是什么（run_round2.py 里算）。replaced：被替换的图层 id（它的人形灰块不在 holes 里）。"""
+    每块在首帧上高亮、问 VLM 这里是什么（run_round2.py 里算）。replaced：被替换的图层 id（它的人形灰块不在 holes 里）。
+    relight=True（视频生成「主体重绘强度」> 0，2026-11-21）：人也交给 H3 部分重画，改用训练里 harmonize 的说法——
+    <Video 1> 和人都是 partially_preserved，「re-render the pasted … so its light, colour, edges and shadow fit the scene」
+    写进 summary 和 detailed_description（和 EDIT["harmonize"] 同一句）。"""
     f = facts(p, replaced)
     pics, k = {}, 0
     for role, on in (("first", refs.get("first")), ("last", refs.get("last")), ("bg", refs.get("bg"))):
@@ -333,8 +336,12 @@ def fill_prompt(p, refs, holes, camera=None, replaced=()):
             continue
         src = look + (f" and the reference sheet <Picture {card_of[m['id']]}>" if m["id"] in card_of else "")
         defs_s.append(f"<Subject {subs}> is {m['label']} of the frame, {src}.")
-        ret_s.append(f"<Subject {subs}> (appears in [Shot 1]): fully_preserved - same face, hair and clothing throughout; "
-                     "pose, gestures and motion exactly as in <Video 1>, frame by frame.")   # 2026-11-04 用户：加动作
+        ret_s.append(f"<Subject {subs}> (appears in [Shot 1]): "
+                     + ("partially_preserved - same face, hair and clothing throughout; pose, gestures and motion exactly as in "
+                        "<Video 1>, frame by frame; only the light, colour and shadow on them are re-rendered to fit the scene."
+                        if relight else
+                        "fully_preserved - same face, hair and clothing throughout; "
+                        "pose, gestures and motion exactly as in <Video 1>, frame by frame."))   # 2026-11-04 用户：加动作
     for oid, n in cards:
         if not any(m["id"] == oid for m in f["main"]):
             subs += 1
@@ -356,8 +363,12 @@ def fill_prompt(p, refs, holes, camera=None, replaced=()):
     fill_s = (join(fills)[0].upper() + join(fills)[1:] + ".") if fills else ""
     ref_bg = f", matching <Subject {env}>" if env else ""
 
+    pasted = (f"the pasted {f['main'][0]['noun']}" if nm == 1 else "the pasted people") if nm else "the pasted subjects"
+    fix = f"Re-render {pasted} so {'its' if nm == 1 else 'their'} light, colour, edges and shadow fit the scene." if relight else ""
+    kept = ("correct, but they were pasted in, so their light and colour may not match the scene yet" if relight
+            else "correct and are kept as they are")
     vid = (f"<Video 1> is a rough composite of this exact shot: the people in it, their size, position and movement are already "
-           f"correct and are kept as they are. Its flat grey areas are only missing pixels, not objects or people. {sil}").strip()
+           f"{kept}. Its flat grey areas are only missing pixels, not objects or people. {sil}").strip()
     defs = [vid]
     if "first" in pics:
         defs.append(f"<Picture {pics['first']}> is the first frame of [Shot 1], with the grey areas already filled in.")
@@ -372,11 +383,14 @@ def fill_prompt(p, refs, holes, camera=None, replaced=()):
     shot = f"A {camera} of {who}" if camera else f"A shot of {who}"
     only = (f"There {'is' if nm == 1 else 'are'} only {_repair_NUM[nm] if nm < len(_repair_NUM) else nm} {'person' if nm == 1 else 'people'} "
             "in the foreground." if nm else "")
-    summary = (f"[{' + '.join(tags)}] {shot}, exactly as laid out in <Video 1>. The shot {span}. Only the grey areas of <Video 1> are "
+    summary = (f"[{' + '.join(tags)}] {shot}, exactly as laid out in <Video 1>. The shot {span}. {'The' if relight else 'Only the'} "
+               f"grey areas of <Video 1> are "
                f"filled in{ref_bg}: {fill_s[0].lower() + fill_s[1:] if fill_s else 'they become the surrounding background.'} "
-               f"{only}").replace("  ", " ").strip()
+               f"{only} {fix}").replace("  ", " ").strip()
 
-    ret = ["<Video 1> (the shot itself): fully_preserved - every person, their size, position and movement stay exactly as in <Video 1>; "
+    ret = ["<Video 1> (the shot itself): partially_preserved - every person, their size, position and movement stay exactly as in "
+           "<Video 1>; its grey areas are filled in and anything pasted or mismatched is re-rendered to match the scene." if relight else
+           "<Video 1> (the shot itself): fully_preserved - every person, their size, position and movement stay exactly as in <Video 1>; "
            "only its grey areas are filled in."]
     if "first" in pics:
         ret.append(f"<Picture {pics['first']}> ([Shot 1] first frame): fully_preserved - the shot opens on this frame.")
@@ -389,7 +403,7 @@ def fill_prompt(p, refs, holes, camera=None, replaced=()):
     each = " ".join(f"<Subject {m['sub']}> stays where and as large as in <Video 1> in every frame, moving as in <Video 1>." for m in f["main"])
     nothing = ("The filled areas contain nothing else: no other person, no figure, no silhouette, no shadow, "
                "no out-of-focus shape in the foreground." if fills else "")   # 和测试 facts_prompt.fill_prompt 逐字一致
-    detailed = f"[Shot 1] {frames_} {each} {fill_s} {nothing}".replace("  ", " ").strip()
+    detailed = f"[Shot 1] {frames_} {each} {fill_s} {nothing} {fix}".replace("  ", " ").strip()
 
     return "\n".join(["subject_definitions:", *defs, "", "summary:", summary, "", "retention_analysis:", *ret, "",
                       "detailed_description:", detailed, "", "overall_soundscape:", "N/A", "", "non_diegetic_music:", "N/A"])

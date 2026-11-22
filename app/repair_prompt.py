@@ -122,9 +122,9 @@ def vl_engine(engine, model):
 
 
 def build(project, engine, work, zones, ends, has_bg, cards, keep, scene, log, composite, layout=None, rect=None, system=None, vid=None,
-          vl=True, vl_model=None):
+          vl=True, vl_model=None, relight=False):
     """vl=False（视频生成面板「空区分析」选了「不用」）：不问 VL，空区用通用补洞描述，其余照常。
-    vl_model：用哪个模型看图（vl_engine）。"""
+    vl_model：用哪个模型看图（vl_engine）。relight：主体重绘强度 > 0，提示词改成「重新渲染粗贴的人」（fill_prompt）。"""
     from engine import check_cancel
     from refprompt import describe_cached
     from regions import EMPTY
@@ -168,7 +168,7 @@ def build(project, engine, work, zones, ends, has_bg, cards, keep, scene, log, c
     else:
         log('  补瑕疵：未选首尾帧或当前引擎不支持看图，使用通用补洞描述')
     data = dict(project.data, current=vid) if vid is not None else project.data
-    prompt=_pf().fill_prompt(data,refs,holes,camera=camera)
+    prompt=_pf().fill_prompt(data,refs,holes,camera=camera,relight=relight)
     if (system or '').strip():
         # 自定义系统提示词也必须带上这次实际分析出的补洞描述。
         fills = ' '.join(f"The grey area {h['where']} is {h['what']}." for h in holes)
@@ -182,11 +182,11 @@ def build(project, engine, work, zones, ends, has_bg, cards, keep, scene, log, c
     return prompt
 
 
-def system_prompt(project, first, last, has_bg, cards, vid=None):
+def system_prompt(project, first, last, has_bg, cards, vid=None, relight=False):
     """生成前展示补瑕疵六段模板；逐块 Qwen-VL 描述在生成时加入。"""
     refs = dict(first=first, last=last, bg=has_bg, cards=cards)
     data = dict(project.data, current=vid) if vid is not None else project.data
-    return _pf().fill_prompt(data, refs, [], camera=CAM_FALLBACK), refs
+    return _pf().fill_prompt(data, refs, [], camera=CAM_FALLBACK, relight=relight), refs
 
 
 USER_MARK = "detailed_description:\n"

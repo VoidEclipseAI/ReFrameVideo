@@ -61,7 +61,7 @@ function renderPresets() {                                         // 档位下�
     S.h3preset = k;
     const [w, h] = h3Canvas(f.w, f.h);
     const name = k === "768" ? T("768p 原生") : k + "p";
-    return `<option value="${k}">${esc(name)} · ${w}×${h}${k === "1080" ? T("（未验证）") : ""}</option>`;
+    return `<option value="${k}">${esc(name)} · ${w}×${h}${k === "960" || k === "1080" ? T("（未验证）") : ""}</option>`;
   }).join("");
   S.h3preset = old; S.h3mode = keep;
   $("#genPreset").value = S.h3preset || "768";
@@ -132,8 +132,8 @@ const genChecked = new Proxy((() => { try { return JSON.parse(localStorage.getIt
 //   free   = 自由分辨率：面板里填的宽高上限，按画幅比例放进去
 // 每边取 32 的倍数（预设正好在中间时：短边往下、长边往上）
 const H3_SHORT_DEFAULT = 768;
-const H3_PRESET_BOX = { 480: [854, 480], 540: [960, 540], 720: [1280, 720], 768: null, 1080: [1920, 1080] };
-const H3_PRESET_IDS = ["480", "540", "720", "768", "1080"];
+const H3_PRESET_BOX = { 480: [854, 480], 540: [960, 540], 720: [1280, 720], 768: null, 960: [1706, 960], 1080: [1920, 1080] };
+const H3_PRESET_IDS = ["480", "540", "720", "768", "960", "1080"];
 function presetCanvas(w, h, preset) {                               // 分辨率预设的画布（engine.preset_canvas；768p 走官方默认规则）
   const r = w / h, box = H3_PRESET_BOX[preset];
   if (!box) { const save = S.h3mode; S.h3mode = "default"; const c = h3Canvas(w, h); S.h3mode = save; return c; }
@@ -163,6 +163,18 @@ function syncPass2Ui() {
 $("#genPass2").onchange = pass2Save;
 $("#genPass2Res").onchange = pass2Save;
 $("#genPass2Dn").onchange = pass2Save;
+// 主体重绘强度（默认 0 = 本体不重绘）、颜色校正（默认开）：2026-11-21 用户要（成片颜色和场景不统一），记在浏览器里（所有项目共用）
+const LOOK_KEY = "vps_gen_look";
+const lookGet = () => { try { return { body: 0, color: true, ...JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") }; } catch { return { body: 0, color: true }; } };
+function lookSave() {
+  const v = { body: Math.min(1, Math.max(0, +$("#genBodyRedraw").value || 0)), color: $("#genColorFix").checked };
+  try { localStorage.setItem(LOOK_KEY, JSON.stringify(v)); } catch {}
+  $("#genBodyRedraw").value = v.body;
+  renderGenPrompt();                                                 // 强度 0 和 > 0 时系统提示词的写法不同
+}
+$("#genBodyRedraw").value = lookGet().body;
+$("#genColorFix").checked = lookGet().color;
+$("#genBodyRedraw").onchange = $("#genColorFix").onchange = lookSave;
 function h3Canvas(w, h) {
   const r = w / h;
   const snap = (v) => Math.max(32, Math.round(v / 32) * 32);
@@ -399,7 +411,7 @@ function renderGenPrompt() {                                        // 换项目
   gpTimer = setTimeout(async () => {
     const pid = S.pid, body = genRefPayload();
     try {
-      const r = await api(`/api/p/${pid}/gen_prompt/preview`, { json: body });
+      const r = await api(`/api/p/${pid}/gen_prompt/preview`, { json: { ...body, body_redraw: lookGet().body } });   // 强度 > 0：重新打光的写法
       if (pid !== S.pid || gpCustom()) return;
       gpSysDefault = r.system;
       if (document.activeElement !== $("#genSys")) $("#genSys").value = r.system;
@@ -432,6 +444,7 @@ function genOp() {                                                 // 这次视�
            prompt: $("#genUser").value.trim(), system: gpCustom() ? $("#genSys").value : null,
            mentions: mentionsOf([$("#genUser").value, gpCustom() ? $("#genSys").value : ""], genMentionItems(true)),
            seed: +$("#genSeed").value || 0, vl: $("#genVl").value !== "off",
+           ...(!genWorkflow && genEngine !== "api" ? { body_redraw: lookGet().body, color_fix: lookGet().color } : {}),   // 只给 H3
            ...(pass2Get().on && !genWorkflow ? { pass2: { on: true, preset: pass2Get().preset, denoise: pass2Get().denoise } } : {}),
            ...(genWorkflow ? { workflow: genWorkflow } : {}),
            ...($("#genVl").value !== "off" ? { vl_model: $("#genVl").value } : {}) };
@@ -586,7 +599,7 @@ function sysDefault(it) { return it.kind === "first" || it.kind === "last" ? SYS
     return;
   }
   try { S.pw = (await api("/api/preview")).w; } catch {}
-  if ((info.api || 0) < 252) {                                       // 页面是新的、服务端还是旧的：提示重启
+  if ((info.api || 0) < 255) {                                       // 页面是新的、服务端还是旧的：提示重启
     const b = document.createElement("div");
     b.textContent = T("服务端版本过旧，请停止后重新启动 server.py（页面已更新，但服务端还在运行旧代码）");
     b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;background:#c0392b;color:#fff;padding:8px 14px;font-weight:600";

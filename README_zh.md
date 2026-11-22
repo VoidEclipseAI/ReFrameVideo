@@ -77,7 +77,7 @@ ReFrameVideo 是一个个人制作的开源项目，用来自由修改已有视�
 
 https://github.com/user-attachments/assets/d0faf678-9df7-4419-8916-b3ce83fd1724
 
-软件里左边栏的书本图标也能随时打开这份教程。更多用法（删掉一个人、换背景、长视频分段、导出到自己的 ComfyUI）见 [完整教程](web/ui/tutorial-zh.md)。
+软件里左边栏的书本图标也能随时打开这份教程。更多用法（删掉一个人、换背景、长视频分段、导出到自己的 ComfyUI）见 [完整教程](web/ui/tutorial-zh.md)。把导出的素材拿到自己的 ComfyUI 运行，见 [导出到自己的 ComfyUI 运行](web/ui/tutorial-comfyui-zh.md)。
 
 ## 工作原理
 

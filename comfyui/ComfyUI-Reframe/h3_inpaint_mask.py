@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 from comfy_api.latest import io
 
-from .h3_mask import frame_groups, map_masks
+from .h3_mask import frame_groups, map_masks, partial_cells
 
 CELL = 32           # pixels per H3 token side (16x VAE downscale * 2x2 patch)
 PREVIEW_SCALE = 4   # preview is canvas / 4, so one cell = 8x8 preview pixels
@@ -46,12 +46,15 @@ def binarize(mask, name):
     return (mask.float().cpu() > 0.5).float()
 
 
-def preview(redraw_cells, protect, conflicts):
-    """[frames, H/4, W/4, 3]: red = repainted cell, yellow = cell with both, green = protected pixels kept."""
+def preview(redraw_cells, protect, conflicts, partial=None):
+    """[frames, H/4, W/4, 3]: red = repainted cell, yellow = cell with both, green = protected pixels kept,
+    blue = partially redrawn cell (partial_mask)."""
     shrink = lambda x: F.max_pool2d(x[:, None], PREVIEW_SCALE, PREVIEW_SCALE)[:, 0] > 0
     red, both, green = shrink(redraw_cells), shrink(conflicts), shrink(protect)
     img = torch.zeros(*red.shape, 3)
     img[green & ~red] = torch.tensor([0.15, 0.75, 0.25])
+    if partial is not None:
+        img[shrink(partial) & ~red] = torch.tensor([0.20, 0.45, 0.95])
     img[red] = torch.tensor([0.85, 0.15, 0.15])
     img[both] = torch.tensor([0.95, 0.80, 0.10])
     return img
@@ -89,6 +92,17 @@ class ReframeH3InpaintMask(io.ComfyNode):
                             "redraw = repaint it (protected edges next to the hole get repainted too); "
                             "protect = keep it (the hole next to protected pixels may stay unfilled).",
                 ),
+                io.Mask.Input(
+                    "partial_mask", optional=True,
+                    tooltip="Optional. White = redraw partially (e.g. a moved subject that should take the new scene's "
+                            "lighting but keep its shape). Cells holding any white pixel that are not fully repainted get "
+                            "`partial_strength` in the noise mask. Same frames and size as redraw_mask.",
+                ),
+                io.Float.Input(
+                    "partial_strength", default=0.0, min=0.0, max=1.0, step=0.01, optional=True,
+                    tooltip="Noise-mask value of partial cells. MiniMax H3 runs a token with mask value m at m * sigma, so "
+                            "0 = keep, 1 = full repaint, 0.3 = light touch (relight / recolour, keep the content).",
+                ),
             ],
             outputs=[
                 io.Latent.Output("latent", display_name="latent", tooltip="`samples` with the noise mask attached. Connect to the sampler."),
@@ -102,7 +116,8 @@ class ReframeH3InpaintMask(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, samples, vae, redraw_mask, conflict, protect_mask=None) -> io.NodeOutput:
+    def execute(cls, samples, vae, redraw_mask, conflict, protect_mask=None, partial_mask=None,
+                partial_strength=0.0) -> io.NodeOutput:
         redraw = binarize(redraw_mask, "redraw_mask")
         protect = torch.zeros_like(redraw) if protect_mask is None else binarize(protect_mask, "protect_mask")
         if protect.shape != redraw.shape:
@@ -123,6 +138,17 @@ class ReframeH3InpaintMask(io.ComfyNode):
                              "Encode exactly the video these masks were made for.")
 
         latent_mask, actual, conflicts, stats = map_masks(redraw, protect, groups, CONFLICT[conflict])
+        partial_view, partial_count = None, 0
+        if partial_mask is not None and float(partial_strength or 0) > 0:
+            partial = binarize(partial_mask, "partial_mask")
+            if partial.shape != redraw.shape:
+                raise ValueError(f"partial_mask {tuple(partial.shape)} and redraw_mask {tuple(redraw.shape)} "
+                                 "must have the same frames, height and width.")
+            latent_mask, cells, partial_count = partial_cells(partial, groups, float(partial_strength), latent_mask)
+            expanded = cells.float().repeat_interleave(CELL, 1).repeat_interleave(CELL, 2)
+            partial_view = torch.zeros_like(redraw)
+            for i, (s, e) in enumerate(groups):
+                partial_view[s:e] = expanded[i]
         out = samples.copy()   # same as Set Latent Noise Mask
         out["noise_mask"] = latent_mask.reshape((-1, 1, latent_mask.shape[-2], latent_mask.shape[-1]))
 
@@ -137,5 +163,7 @@ class ReframeH3InpaintMask(io.ComfyNode):
             "protect_pixels_repainted": stats["body_pixels_in_output_mask"],
             "frame_groups": stats["frame_groups_start_inclusive_end_exclusive"],
             "vae_geometry": geometry,
+            "partial_strength": float(partial_strength or 0),
+            "cells_partial": partial_count,
         }
-        return io.NodeOutput(out, preview(actual, protect, conflicts), json.dumps(report, indent=2))
+        return io.NodeOutput(out, preview(actual, protect, conflicts, partial_view), json.dumps(report, indent=2))

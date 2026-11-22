@@ -31,6 +31,7 @@ class Pass:
     refs: list = field(default_factory=list)
     ref_labels: list = field(default_factory=list)   # 每张参考图是什么（首帧 / 尾帧 / 背景图 / 资料卡…），写进 inputused.txt
     audio: object = None                 # 原片（取音轨），和粗剪一起编码，声音不重绘
+    partial: object = None               # 主体重绘强度：(像素 (n,h,w) bool, 强度 0~1)；None = 本体不重绘（默认）
     seed: int = field(default_factory=lambda: random.randint(0, 2**31 - 1))
 
 
@@ -96,6 +97,79 @@ def prefill(project, c, comp, zones, rect, log):
     return keep if keep.any() else None
 
 
+def partial_body(c, zones, rect):
+    """「主体重绘强度」作用的像素：本体（BODY），保护蒙版画过的地方除外（用户明确要保留的）。和 zones 同大小。"""
+    from regions import to_frame
+    body = zones == BODY
+    L = c.get("layout")
+    prot = getattr(L, "protect", None) or []
+    if prot:
+        full = [0, 0, L.w, L.h]
+        for i in range(len(body)):
+            pm = np.zeros((L.h, L.w), bool)
+            for o in prot:
+                pm |= L.mask(o["id"], i)
+            body[i] &= ~(to_frame(pm, rect, False) if list(rect) != full else pm)
+    return body
+
+
+COLOR_PTS = 4000                         # 颜色校正：每帧最多取这么多参考点
+
+
+def color_reference(comp, changed, cell_px, seed=0):
+    """颜色校正的参考点：不重绘的地方（避开重绘格一圈、前后 4 帧）在合成输入里的真实颜色。
+    返回 dict(ys, xs = 每帧一组 0~1 的坐标, rgb = 每帧 (k, 3) uint8)；参考点太少的帧为空。"""
+    n, H, W = changed.shape
+    k = np.ones((int(cell_px) * 2 + 1,) * 2, np.uint8)
+    rng = np.random.default_rng(seed)
+    ys, xs, rgb = [], [], []
+    for i in range(n):
+        bad = changed[max(0, i - 4):i + 5].any(0)       # H3 按 1 / 4 帧一组重绘：前后几帧有重绘，这一帧也可能被改
+        ok = cv2.erode((~bad).astype(np.uint8), k) > 0  # 格里有一点重绘就整格重绘：离远一点
+        yy, xx = np.nonzero(ok)
+        if len(yy) < 300:
+            ys.append(np.zeros(0, np.float32)); xs.append(np.zeros(0, np.float32)); rgb.append(np.zeros((0, 3), np.uint8))
+            continue
+        pick = rng.choice(len(yy), min(COLOR_PTS, len(yy)), replace=False)
+        yy, xx = yy[pick], xx[pick]
+        ys.append(((yy + 0.5) / H).astype(np.float32)); xs.append(((xx + 0.5) / W).astype(np.float32))
+        rgb.append(comp[i][yy, xx])
+    return dict(ys=ys, xs=xs, rgb=rgb)
+
+
+def _ref_diff(frames, ref):
+    """每帧 参考颜色 − 成片颜色 的中位数（每通道）；没有参考点的帧 = nan。"""
+    gh, gw = frames.shape[1:3]
+    d = np.full((len(frames), 3), np.nan, np.float32)
+    for i in range(min(len(frames), len(ref["rgb"]))):
+        if not len(ref["rgb"][i]):
+            continue
+        y = np.minimum((ref["ys"][i] * gh).astype(int), gh - 1)
+        x = np.minimum((ref["xs"][i] * gw).astype(int), gw - 1)
+        d[i] = np.median(ref["rgb"][i].astype(np.float32) - frames[i][y, x].astype(np.float32), 0)
+    return d
+
+
+def color_fix(out, ref, log):
+    """整条偏色（2026-11-21 用户要）：H3 输出（VAE 解码、转存）让没重绘的地方也整体变暗 / 偏色（实测亮度约 −3.6/255，
+    换背景时人还会偏黄）。以不重绘的地方为标准：每帧每通道算偏移（中位数，前后 15 帧平滑），整帧加上。只平移、不拉伸；
+    有参考点的帧不到 5% 就整条跳过（几乎全重绘时没有可靠的标准）。原地改 out，返回每通道平均偏移（没校返回 None）。"""
+    d = _ref_diff(out, ref)
+    good = ~np.isnan(d[:, 0])
+    if good.mean() < 0.05:
+        log("  颜色校正：不重绘的地方太少，没有可靠的标准，跳过")
+        return None
+    idx = np.arange(len(d))
+    for ch in range(3):                                  # 没有参考点的帧：用前后有参考点的帧插值
+        d[:, ch] = np.interp(idx, idx[good], d[good, ch])
+    k = 15
+    sm = np.stack([np.convolve(np.pad(d[:, ch], k // 2, mode="edge"), np.ones(k) / k, "valid") for ch in range(3)], 1)
+    sm = np.clip(sm, -20, 20).astype(np.float32)
+    for i in range(len(out)):
+        out[i] = np.clip(out[i].astype(np.float32) + sm[i], 0, 255).astype(np.uint8)
+    return sm.mean(0)
+
+
 def op_compose(project, engine, op, log):
     """生成：粗剪 + 重绘区 + 参考图（首帧 / 尾帧 / 背景图 / 资料卡，勾了才传）+ 补瑕疵提示词 → H3 → 成片放进「结果」。"""
     x = prepare_compose(project, engine, op, log)
@@ -106,28 +180,49 @@ def op_compose(project, engine, op, log):
     levels = [(canvas_mask if canvas_mask is not None else mask, 255)]
     pass2 = getattr(p, "pass2", None)
     p.pass2 = None                                       # 一采；开了二采时先把一采存成一条结果（标「一采」），再跑二采
+    ref = None
+    if op.get("color_fix", True) is not False:           # 颜色校正（视频生成面板，默认开）：参考 = 不重绘的地方在合成输入里的颜色
+        changed = mask | p.partial[0] if p.partial else mask
+        ref = color_reference(c["comp"], changed, 1.5 * 32 * W / h3_canvas(W, H)[0], seed=p.seed)
     first = engine.inpaint_levels(p, work, meta, levels, log, ref_videos=[guide])
     name = "合成 " + "、".join(o["name"] for o in lifted)
     if not pass2 or not hasattr(engine, "second_pass"):    # 假引擎没有二采
-        return save_result(project, work, first, n, c["base"], name, log)
+        return save_result(project, work, first, n, c["base"], name, log, ref=ref)
     p.pass2 = pass2
-    save_result(project, work, first, n, c["base"], "一采 · " + name, log, src="result_pass1.mp4", rid=work.name + "_p1", tag="pass1")
+    save_result(project, work, first, n, c["base"], "一采 · " + name, log, src="result_pass1.mp4", rid=work.name + "_p1", tag="pass1",
+                ref=ref)
     final = engine.second_pass(p, work, meta, levels, first, log, ref_videos=[guide])
     if Path(final) == Path(first):                       # 二采画布不比一采大、跳过了：一采就是成片，不再存第二条
         return dict(open_result=work.name + "_p1")
-    return save_result(project, work, final, n, c["base"], name, log)
+    return save_result(project, work, final, n, c["base"], name, log, ref=ref)
 
 
-def save_result(project, work, video, n, base, name, log, src="result.mp4", rid=None, tag=None):
+def save_result(project, work, video, n, base, name, log, src="result.mp4", rid=None, tag=None, ref=None):
     """H3 输出整幅直接用，不贴回原片；成片 = H3 画布的分辨率（2026-11-15 用户定：去掉「放大到画幅尺寸」）。
-    补帧多出来的按原片帧数取（不够就按时间比例拉），带原视频的声音，记进「视频结果」。"""
+    补帧多出来的按原片帧数取（不够就按时间比例拉），带原视频的声音，记进「视频结果」。
+    ref = color_reference(...)（「颜色校正」开着）：按不重绘的地方把整条偏色校回来（color_fix）；写完读回来再量一次，
+    把转存（RGB → yuv420）带来的偏差也补掉。"""
     g, _ = read_video(video)
     gh, gw = g.shape[1:3]
     out = np.empty((n, gh, gw, 3), np.uint8)
     for i in range(n):
         out[i] = g[i if len(g) >= n else min(round(i * len(g) / n), len(g) - 1)]
+    del g                                                # 长片段 + 二采时一份就 1 GB 多：用完就放
     log(f"  成片 {gw}x{gh}（H3 输出的分辨率）")
+    shift = color_fix(out, ref, log) if ref is not None else None
     write_video(work / src, out, project.data["fps"], audio_from=project.video("v0"))
+    if shift is not None:
+        back, _ = read_video(work / src)
+        left = np.nanmean(_ref_diff(back, ref), 0)
+        del back
+        if np.isfinite(left).all() and np.abs(left).max() > 0.3:       # 转存的偏差（实测约 −0.8）：整条再补一次
+            for i in range(len(out)):                    # 逐帧原地加，不整条复制成 float
+                out[i] = np.clip(out[i].astype(np.float32) + left, 0, 255).astype(np.uint8)
+            write_video(work / src, out, project.data["fps"], audio_from=project.video("v0"))
+            back, _ = read_video(work / src)
+            left = np.nanmean(_ref_diff(back, ref), 0)
+            del back
+        log(f"  颜色校正：不重绘的地方原来差 RGB {np.round(shift, 1).tolist()}，校完剩 {np.round(left, 1).tolist()}")
     return add_result(project, work, gw, gh, base, name, log, src=src, rid=rid, tag=tag)
 
 
@@ -205,12 +300,13 @@ def prepare_compose(project, engine, op, log, build_prompt=True, mention_fmt=Non
     pic, vid_fmt = mention_fmt or ((MN.PICTURE_H3, MN.VIDEO_H3) if build_prompt else (MN.PICTURE_API_VIDEO, MN.VIDEO_API_VIDEO))
     user_prompt = MN.resolve(str(op.get("prompt") or ""), mentions, keys, pic, vid_fmt, log=log)
     system = MN.resolve(op.get("system"), mentions, keys, pic, vid_fmt, log=log) if op.get("system") else op.get("system")
+    strength = min(max(float(op.get("body_redraw") or 0), 0.0), 1.0)   # 主体重绘强度（视频生成面板，默认 0 = 本体不重绘）
     if build_prompt:
         from repair_prompt import build
         prompt = build(project, engine, work, zones, ends, bg_ref is not None,
                        [oid for oid, _ in cards], None, user_prompt, log, comp,
                        layout=c["layout"], rect=rect, system=system, vid=c["base"], vl=op.get("vl", True) is not False,
-                       vl_model=op.get("vl_model"))
+                       vl_model=op.get("vl_model"), relight=strength > 0)
     else:
         prompt = user_prompt.strip()
     keep = prefill(project, c, comp, zones, rect, log)   # 背景预填图层：范围里的空区改用背景图
@@ -235,6 +331,11 @@ def prepare_compose(project, engine, op, log, build_prompt=True, mention_fmt=Non
              ref_labels=pic_labels + (["背景图"] if bg_ref else []) + [f"资料卡：{project.obj(oid)['name']}" for oid, _ in cards]
              + [label for label, _, _ in extras])
     p.audio = project.video("v0")                        # 原片音轨：和粗剪一起编码，声音不重绘
+    if strength > 0:
+        part = partial_body(c, zones, rect) & ~mask
+        if part.any():
+            p.partial = (part, strength)
+            log(f"  主体重绘强度 {strength:.2f}：本体（保护蒙版除外）轻度重绘，占画面 {part.mean() * 100:.1f}%")
     p2 = op.get("pass2")                                 # 二次采样（视频生成面板「二次采样（高清）」，默认关）：engine.second_pass
     if isinstance(p2, dict) and p2.get("on"):
         from engine import H3_PRESETS

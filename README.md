@@ -77,7 +77,7 @@ The output video (left: original, right: result):
 
 https://github.com/user-attachments/assets/d0faf678-9df7-4419-8916-b3ce83fd1724
 
-The book icon in the app's left toolbar opens this tutorial at any time. For more (removing a person, replacing the background, long videos, exporting to your own ComfyUI) see the [full tutorial](web/ui/tutorial-en.md).
+The book icon in the app's left toolbar opens this tutorial at any time. For more (removing a person, replacing the background, long videos, exporting to your own ComfyUI) see the [full tutorial](web/ui/tutorial-en.md). To run the exported inputs in your own ComfyUI, see [Run in your own ComfyUI](web/ui/tutorial-comfyui-en.md).
 
 ## How it works
 

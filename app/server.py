@@ -221,7 +221,7 @@ def start_job(fn, name=None, pid=None):
 
 # ---------- 项目 ----------
 
-API_VERSION = 252        # 前端会检查：服务端比页面旧时提示重启
+API_VERSION = 255        # 前端会检查：服务端比页面旧时提示重启
 
 
 @app.get("/api/info")
@@ -2001,7 +2001,7 @@ def gen_prompt_preview(pid: str, body: dict = Body(...)):
     has = lambda k: bool(a.get(k)) and bool(IM.picked_path(p, k, vid=vid))
     cards = [oid for oid in body.get("cards") or [] if any(o["id"] == oid for o in p.objects_in(vid))]
     has_bg = bool(body.get("use_bg")) and PANO.load(p) is not None
-    prompt, _ = system_prompt(p, has("first"), has("last"), has_bg, cards, vid)
+    prompt, _ = system_prompt(p, has("first"), has("last"), has_bg, cards, vid, relight=float(body.get("body_redraw") or 0) > 0)
     return {"system": prompt}
 
 

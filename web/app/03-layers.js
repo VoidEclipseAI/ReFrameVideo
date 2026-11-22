@@ -183,7 +183,12 @@ $("#delLayerBtn").onclick = async () => {
 
 const tfMoved = (t) => !!(t && (t.x || t.y || (t.sx ?? 1) !== 1 || (t.sy ?? 1) !== 1 || t.rot));
 async function mergeLayers(os, main) {
-  if (!(await uiConfirm(T`把 ${os.map((o) => o.name).join("、")} 合并成一个图层？（不能撤销；位置大小、边缘设置用「${(main || os.find((o) => tfMoved(o.tf)) || { name: T("面积最大的那个") }).name}」的）`, { ok: T("合并") }))) return;
+  const en = uiLanguage === "en";
+  const names = os.map((o) => o.name).join(en ? ", " : "、");
+  const from = (main || os.find((o) => tfMoved(o.tf)) || { name: T("面积最大的那个") }).name;
+  const msg = en ? `Merge ${names} into one layer? (This can't be undone. Position, size and edge settings come from "${from}".)`
+    : `把 ${names} 合并成一个图层？（不能撤销；位置大小、边缘设置用「${from}」的）`;
+  if (!(await uiConfirm(msg, { ok: T("合并") }))) return;
   try {
     const d = await api(`/api/p/${S.pid}/merge`, { json: { oids: os.map((o) => o.id), main: main?.id } });
     S.sel.clear();
