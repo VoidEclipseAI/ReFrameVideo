@@ -136,8 +136,13 @@ def set_key_frame(p, it, frame, log=print):
     """关键帧改帧号：重新取画面（候选清空、文件留着；旧候选是另一帧的画面，签名里没有帧号，不清会被当成没过期）。"""
     if it["kind"] != "key":
         raise ValueError("只有关键帧能改帧号")
+    old = it.get("frame")
     it["frame"] = min(max(int(frame), 0), p.data["n"] - 1)
-    return take_base(p, it, log)
+    try:
+        return take_base(p, it, log)
+    except BaseException:                                # 取画面失败：帧号退回，和原图、选用保持一致
+        it["frame"] = old
+        raise
 
 
 def card_sys(p, it):

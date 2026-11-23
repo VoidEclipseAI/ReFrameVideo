@@ -524,16 +524,14 @@ class Project:
 
     def trim_copy(self, projects_dir: Path, a: int, b: int, log=print):
         """把第 a–b 帧（含）另存成一个新项目（时间轴「切出选区」）。原项目不动；当前版本的图层、画幅按新帧号带过去（_carry_layers）。
-        从项目里的原视频按帧号剪（缩过的项目原视频更清楚，帧号和工作视频一一对应）；帧数对不上就用 v0 工作视频。返回新项目。"""
+        从 v0 工作视频按帧号剪（帧号、尺寸和图层一一对应）。返回新项目。"""
         n = int(self.data["n"])
         a, b = max(0, int(a)), min(n - 1, int(b))
         if a > b:
             raise ValueError("选区是空的")
         if a == 0 and b == n - 1:
             raise ValueError("选区就是整段视频，不用切")
-        src = next(iter(sorted(self.root.glob("原视频.*"))), None)
-        if src is None or probe(src)[2] != n:
-            src = self.video("v0")
+        src = self.video("v0")
         fps = float(self.data["fps"])
         k = b - a + 1
         log(f"切出第 {a}–{b} 帧（{k} 帧，{k / fps:.2f} 秒）")
@@ -558,13 +556,17 @@ class Project:
                 tmp.unlink()
             except OSError:
                 pass
-        q.data["name"] = f"{self.data.get('name', '')} · 第{a}-{b}帧"
-        q.data["trimmed_from"] = {"id": self.data["id"], "start": a, "end": b, "version": self.data.get("current")}
-        if (q.data["n"], q.data["w"], q.data["h"]) != (k, self.data["w"], self.data["h"]):
-            log(f"注意：新项目是 {q.data['w']}×{q.data['h']}、{q.data['n']} 帧，和原项目对不上，图层和画幅没带过来，要重新识别")
-        else:
-            self._carry_layers(q, a, b, log)
-        q.save()
+        try:
+            q.data["name"] = f"{self.data.get('name', '')} · 第{a}-{b}帧"
+            q.data["trimmed_from"] = {"id": self.data["id"], "start": a, "end": b, "version": self.data.get("current")}
+            if (q.data["n"], q.data["w"], q.data["h"]) != (k, self.data["w"], self.data["h"]):
+                log(f"注意：新项目是 {q.data['w']}×{q.data['h']}、{q.data['n']} 帧，和原项目对不上，图层和画幅没带过来，要重新识别")
+            else:
+                self._carry_layers(q, a, b, log)
+            q.save()
+        except BaseException:                             # 带图层出错：不留半成品项目
+            shutil.rmtree(q.root, ignore_errors=True)
+            raise
         return q
 
     def _carry_layers(self, q, a, b, log=print):

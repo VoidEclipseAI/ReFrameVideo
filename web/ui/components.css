@@ -1099,7 +1099,7 @@ body.gen-api #genFilesBtn, body.img-api #imgFilesBtn { display: none; }
 #guideMore { text-decoration: none; }
 
 /* 「正在加载」小窗（01-core.js uiBusy） */
-.busy-dlg { z-index: 210; }
+.busy-dlg { z-index: 210; pointer-events: none; }   /* 只是提示：不挡顶栏「停止」 */
 .busy-dlg .dlg-card { width: min(380px, 92vw); display: flex; align-items: center; gap: 14px; padding: 18px 20px; }
 .busy-dlg .busy-t { font-size: 14px; font-weight: 600; color: var(--text); }
 .busy-dlg .busy-s { margin-top: 4px; font-size: 12px; color: var(--sub, var(--muted)); line-height: 1.5; word-break: break-all; }
