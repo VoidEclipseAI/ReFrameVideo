@@ -32,7 +32,7 @@ function renderAll() { renderLayers(); renderVersions(); renderPano(); renderFra
 
 // ---------- 顶部标签：视频 + 这个视频的图片（首帧 / 尾帧 / 背景图 / 资料卡）----------
 // 图片标签里只做一件事：Qwen 出几张候选，挑一张（✓）。合成视频时自动用上挑好的图。
-const KIND_LABEL = { first: T("首帧"), last: T("尾帧"), bg: T("背景图"), card: T("资料卡") };
+const KIND_LABEL = { first: T("首帧"), last: T("尾帧"), bg: T("背景图"), card: T("资料卡"), key: T("关键帧") };
 // 图片标签、视频结果都跟着版本走：只看当前版本的（没记版本的旧标签 / 旧结果每个版本都显示）
 const ofVer = (v) => !v || !S.d || v === S.d.current;
 // 标签可以拖动排顺序（ui/ptabs.js 的 uiReorder）：页面顺序全局一份，图片标签顺序每个项目一份，记在浏览器里（不改项目文件）
@@ -45,7 +45,9 @@ window.uiSetTabOrder = (bar, ids) => {                               // 拖完�
   try { localStorage.setItem(bar === "pages" ? "vps_page_order" : imgOrderKey(), JSON.stringify(ids.map((x) => x.replace(/^ires:/, "")))); } catch {}
   renderTabs();
 };
+const keyTabs = () => imgTabs().filter((t) => t.kind === "key").sort((a, b) => (a.frame - b.frame) || (a.id < b.id ? -1 : 1));   // 和后端 images.keys 同序
 const imgLabel = (it) => {
+  if (it.kind === "key") return T("关键帧") + " · " + FR(it.frame ?? 0);   // 可以多张：名字带帧号
   const defaults = { first: "首帧", last: "尾帧", bg: "背景图", card: "资料卡" };
   return it.label === defaults[it.kind] ? T(it.label) : it.label;
 };
@@ -67,6 +69,7 @@ const curRes = () => {
 
 function renderTabs() {
   if (!S.d) return;
+  if (S.tab === "video") S.inStill = false;                         // 回到视频编辑：S.i 又是视频的播放头
   const pn = S.d.panorama;
   if (S.tab === "orig" && !origTab()) S.tab = "video";
   if (S.tab !== "video" && S.tab !== "orig" && !curImg() && !curIres() && !curRes()) S.tab = "video";
@@ -99,12 +102,12 @@ function renderTabs() {
   }).join("") : "";
   renderGenRefs();                                                 // 视频生成栏的参考勾选跟着图片标签的「选用」变
   const it = curImg(), rs = curRes();
-  const still = !rs && it && (it.kind === "first" || it.kind === "last") && !it.base_upload;   // 上传了画面的首帧 / 尾帧：和资料卡一样看图
+  const still = !rs && it && isStill(it) && !it.base_upload;   // 上传了画面的首帧 / 尾帧：和资料卡一样看图
   const orig = S.tab === "orig", ir = curIres();
   const prevTab = document.body.dataset.tab;
   document.body.dataset.tab = ir ? "ires" : orig ? "orig" : rs ? "res" : !it ? "video" : it.kind === "bg" ? "bg" : still ? "still" : "card";
   window.uiSyncRailPage?.();
-  document.body.classList.toggle("img-up", !ir && !rs && !!it && (it.kind === "first" || it.kind === "last") && !!it.base_upload);   // 没有视频图层的画面（接着编辑 / 上传的图）
+  document.body.classList.toggle("img-up", !ir && !rs && !!it && isStill(it) && !!it.base_upload);   // 没有视频图层的画面（接着编辑 / 上传的图）
   if (S.shape && S.shape.view === "img" && !document.body.classList.contains("img-up")) endShape();      // 切走了：局部重绘的画笔收起
   { const IMG_EDIT = ["still", "card", "bg"];                       // 从别的页进图片编辑：自动打开「生成」组（在图片编辑里切标签不动）
     if (IMG_EDIT.includes(document.body.dataset.tab) && !IMG_EDIT.includes(prevTab)) { window.uiOpenGroup?.("gen"); autoRefreshBases(); } }
@@ -234,7 +237,7 @@ function panoUsable() {
 function maybeWarnStillBg() {
   if (!S.d || !S.pid) return;
   const it = curImg();
-  if (!it || (it.kind !== "first" && it.kind !== "last")) return;
+  if (!it || !isStill(it)) return;
   if (panoUsable()) return;
   try { if (localStorage.getItem(bgWarnKey()) === "1") return; } catch {}
   $("#bgWarnNoMore").checked = false;
@@ -291,6 +294,7 @@ for (const bar of ["#tabList", "#tabSub"]) $(bar).addEventListener("click", asyn
   } catch (err) { setLog(err.message, true); }
 });
 
+const keyFrameNow = () => Math.max(0, Math.min(S.d.n - 1, (S.tab === "video" || !S.inStill ? S.i : S.vidI ?? S.i) | 0));   // 新建关键帧取的那一帧
 function openTabMenu(e, anchor, imagesOnly) {
   e.stopPropagation();
   if (!S.d) return;
@@ -307,7 +311,8 @@ function openTabMenu(e, anchor, imagesOnly) {
     : T`<div class="off" data-page-empty="${k}">${esc(v)}<span class="note">这个版本还没有</span></div>`).join("");
   let h = (imagesOnly ? "" : pages + T`<div data-kind="orig">原视频<span class="note">${origTab() ? T("已有，切换过去") : T("← 播放原视频，方便对比")}</span></div>` + '<div class="sep"></div>') +
           row("first", "", T("首帧"), T("← 按现在的图层摆放取第 0 帧")) + row("last", "", T("尾帧"), T("← 取最后一帧")) +
-          row("bg", "", T("背景图"), T("← 背景全景图"));
+          row("bg", "", T("背景图"), T("← 背景全景图")) +
+          `<div data-kind="key">${T("关键帧")}<span class="note">${T("← 取视频编辑播放头这一帧")} · ${FR(keyFrameNow())}</span></div>`;
   const layers = objs();
   h += '<div class="sep"></div>' + (layers.length
     ? layers.map((o) => row("card", o.id, T("资料卡 · ") + o.name, T("← 抠出这个人做三视图"))).join("")
@@ -328,6 +333,17 @@ $("#tabMenu").addEventListener("click", async (e) => {
   $("#tabMenu").hidden = true;
   const kind = r.dataset.kind, oid = r.dataset.oid || null;
   if (kind === "orig") { setOrigTab(true); return showTab("orig"); }
+  if (kind === "key") {                                            // 关键帧：可以多张，每次新建（帧号 = 视频编辑播放头）
+    const before = new Set(imgTabs().map((t) => t.id));
+    try {
+      const res = await api(`/api/p/${S.pid}/images`, { json: { kind, frame: keyFrameNow() } });
+      if (res.pending) await watchJob();
+      setProject(await api(`/api/p/${S.pid}`), true);
+      const it = imgTabs().find((t) => t.kind === "key" && !before.has(t.id));
+      if (it) showTab(it.id);
+    } catch (err) { setLog(err.message, true); }
+    return;
+  }
   const find = () => imgTabs().find((t) => t.kind === kind && (kind !== "card" || t.oid === oid));
   if (find()) return showTab(find().id);
   try {
@@ -387,7 +403,8 @@ $("#imgBox").addEventListener("pointerdown", (e) => {               // 拖竖线
 // 首帧 / 尾帧标签 = 视频编辑停在这一帧：同一个画布、图层、蒙版面板；叠加层 = 这张图的补图范围
 function enterStill(it) {
   if (S.playing) togglePlay();
-  const i = it.frame ?? (it.kind === "first" ? 0 : S.d.n - 1);
+  if (!S.inStill) { S.vidI = S.i; S.inStill = true; }              // 进首帧 / 尾帧 / 关键帧会改 S.i：先记下视频编辑的播放头（新建关键帧取这一帧）
+  const i = it.kind === "key" ? Math.min(it.frame ?? 0, S.d.n - 1) : it.frame ?? (it.kind === "first" ? 0 : S.d.n - 1);
   if (S.i !== i) S.i = i;
   renderProps();
   requestAnimationFrame(draw);
@@ -398,14 +415,20 @@ const IMG_OPTS = [["imgClose", "img_close", 0], ["imgGrow", "img_grow", 0], ["im
 async function renderRefTab(it) {
   setTimeout(syncImgEngine, 0);                                  // ComfyUI / API 两条路：面板显示哪些控件
   $("#rgKind").textContent = "· " + imgLabel(it);
+  $("#imgKeyRow").hidden = it.kind !== "key";
+  if (it.kind === "key") {
+    if (document.activeElement !== $("#imgKeyFrame")) $("#imgKeyFrame").value = it.frame ?? 0;
+    $("#imgKeyFrame").max = S.d.n - 1;
+    $("#imgKeySec").textContent = `${((it.frame ?? 0) / S.d.fps).toFixed(1)} s / ${S.d.n - 1}`;
+  }
   if (typeof placeCommonRows === "function") placeCommonRows();     // 图片模型 / seed 两行：背景图进第二步，其它标签回顶部
   $("#imgResN").textContent = it.kind === "bg" ? bgCards().length : it.cands ? it.cands.length : 0;
-  $("#imgBaseReset").hidden = !(it.base_upload && (it.kind === "first" || it.kind === "last")) || !!it.base_from;   // 接着编辑的候选图：不能改回视频画面
-  { const up = (it.kind === "first" || it.kind === "last") && !!it.base_upload;   // 局部重绘：只在没有视频图层的画面上（接着编辑的候选图 / 上传的图）
+  $("#imgBaseReset").hidden = !(it.base_upload && isStill(it)) || !!it.base_from;   // 接着编辑的候选图：不能改回视频画面
+  { const up = isStill(it) && !!it.base_upload;   // 局部重绘：只在没有视频图层的画面上（接着编辑的候选图 / 上传的图）
     $("#imgRepaintRow").hidden = !up;
     $("#imgRepaintInfo").textContent = it.repaint ? T`已画 ${it.repaint}%：只重绘这块` : T("没画：整张按提示词改");
     $("#imgRepaintClear").hidden = !it.repaint;
-    $("#imgFeatherRow").hidden = !(up && it.repaint) && !((it.kind === "first" || it.kind === "last") && it.mode === "inpaint");
+    $("#imgFeatherRow").hidden = !(up && it.repaint) && !(isStill(it) && it.mode === "inpaint");
     const fe = it.repaint_feather ?? 16; $("#imgFeather").value = fe; $("#imgFeatherVal").textContent = fe ? fe + " px" : T("硬边"); }
   $("#imgBaseUp").innerHTML = IC("upload") + (it.base_upload ? T("换一张上传的图") : T("上传图片来编辑"));
   if (it.kind === "bg") { $("#refBlock").hidden = true; renderPano(); renderBgMain(); return; }   // 背景图没有「原图 / 背景参考」这两行
@@ -413,7 +436,7 @@ async function renderRefTab(it) {
   if ($("#imgDesc").dataset.for !== it.id) {                         // 换了标签才重新载入（正在写的不被刷掉）
     $("#imgDesc").value = it.desc || ""; $("#imgSys").value = sysOf(it); $("#imgDesc").dataset.for = it.id;
   }
-  const still = it.kind === "first" || it.kind === "last", pano = !!S.d.panorama;
+  const still = isStill(it), pano = !!S.d.panorama;
   $$("#imgModeSw [data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === (it.mode === "inpaint" ? "inpaint" : "gen")));
   fillPeSel(it);
   $("#imgBody").checked = !!it.body;
@@ -458,7 +481,7 @@ async function renderRefTab(it) {
       `<span class="rc-t"><b class="num">#${k + 1}</b><small>${esc(sub)}</small></span>` +
       `${old ? T('<span class="stalebtn" title="出这张之后视频里的图层又改过了，可能和现在的画面对不上">过期</span>') : ""}` +
       `<span class="pickbtn">${on ? T("✓ 已选用") : T("选用")}</span>` +
-      (it.kind === "first" || it.kind === "last" ? T`<button type="button" class="rc-edit" data-continue="${c}" title="用这张接着编辑：回到图片编辑，这张图成为新画面（不再带视频图层）">${IC("pencil")}</button>` : "") + `</div>`;
+      (isStill(it) ? T`<button type="button" class="rc-edit" data-continue="${c}" title="用这张接着编辑：回到图片编辑，这张图成为新画面（不再带视频图层）">${IC("pencil")}</button>` : "") + `</div>`;
   }).join("");
   if (wait) $("#imgCands").insertAdjacentHTML("afterbegin", T`<div class="rc wait">生成中… 还有 ${wait} 张</div>`);
   if (!it.cands.length && !wait) $("#imgCands").innerHTML = T('<div class="empty">还没有候选：点「生成候选」</div>');
@@ -478,7 +501,7 @@ async function renderRefTab(it) {
   } else $("#imgStaleNote").hidden = true;
 }
 // ---------- 额外参考图（Picture 3、4…；首帧 / 尾帧有背景参考时它是 Picture 2）----------
-const xFirst = (it) => 2 + ((it.kind === "first" || it.kind === "last") && (S.d.panorama || it.bg_choice === "local") && it.use_bg !== false ? 1 : 0);
+const xFirst = (it) => 2 + (isStill(it) && (S.d.panorama || it.bg_choice === "local") && it.use_bg !== false ? 1 : 0);
 const xNote = (r, n) => (r.note || "").split("{n}").join(n);                      // 显示：占位符换成实际图号
 const xSave = (txt, n) => txt.split(`Picture ${n}`).join("Picture {n}");            // 保存：图号换回占位符（删了前面的图号会自动顺延）
 function renderExtra(it) {
@@ -532,7 +555,7 @@ $("#imgRefs").addEventListener("click", (e) => {
   if (!b) return;
   if (b.dataset.act === "refresh") return $("#imgBaseReset").click();  // 原图「刷新」：按现在的编辑重新取画面（候选保留）
   if (b.dataset.act === "more") {                                  // 原图 ⋯：换成上传的图 / 改回视频画面
-    const it = curImg(), still = it && (it.kind === "first" || it.kind === "last");
+    const it = curImg(), still = it && isStill(it);
     return openRefMenu(b, [
       { label: it && it.base_upload ? T("换一张上传的图…") : T("换成上传的图…"), hint: T("代替从视频取的画面"), run: () => $("#imgBaseUp").click() },
       ...(still && !it.base_from ? [{ label: T("改回视频画面"), hint: it.base_upload ? T("按现在的编辑重新取") : T("现在就是视频画面"), disabled: !it.base_upload, run: () => $("#imgBaseReset").click() }] : []),
@@ -546,7 +569,7 @@ $("#imgRefAdd").dataset.refmenu = "img:add";
 $("#imgRefAdd").onclick = () => {
   const it = curImg();
   if (!it) return;
-  const still = it.kind === "first" || it.kind === "last", pano = !!S.d.panorama;
+  const still = isStill(it), pano = !!S.d.panorama;
   const bgOn = still && (pano || it.bg_choice === "local") && it.use_bg !== false;
   const items = [];
   if (still && !bgOn) items.push({ label: T("背景图"), hint: pano ? T("从背景候选里挑") : T("挑 / 上传一张背景"), run: () => $("#bgLibrary").click() });
@@ -655,7 +678,7 @@ $("#imgTabPick").addEventListener("click", async (e) => {
 });
 
 function showPicked(it) {
-  const still = it.kind === "first" || it.kind === "last";
+  const still = isStill(it);
   if (curImg() && still && !it.base_upload) { if (S.stillShow) { S.stillShow = null; draw(); } return; }
   if (curImg() && still) {                                         // 接着编辑的候选图 / 上传的图：大图 = 这张画面（局部重绘画在它上面）
     showMain(imgUrl(it, "base"), it.base_from && it.cands.includes(it.base_from) ? T`画面：接着编辑候选 #${it.cands.indexOf(it.base_from) + 1}` : T("画面：上传的图"));
@@ -683,7 +706,7 @@ for (const id of ["#imgRefs", "#imgCands", "#imgExtra"]) $(id).addEventListener(
   if (!c || !it || e.target.closest("textarea, button")) return;
   const n = c.dataset.name;
   if (it.kind === "bg") { showMain(panoSrc(n, 0), (bgCards().find((x) => x.name === n) || {}).label || T("背景图")); return; }
-  if (curImg() && (it.kind === "first" || it.kind === "last") && !it.base_upload && n !== "bg" && !n.startsWith("ref_")) {   // 编辑首帧 / 尾帧时：候选直接显示在画幅里
+  if (curImg() && isStill(it) && !it.base_upload && n !== "bg" && !n.startsWith("ref_")) {   // 编辑首帧 / 尾帧时：候选直接显示在画幅里
     S.stillShow = imgUrl(it, n);
     return draw();
   }
@@ -886,7 +909,7 @@ $("#imgModeSw").addEventListener("click", (e) => {                 // 填补 / �
   if (wasDefault) { $("#imgSys").value = sysDefault(it); f.sys = $("#imgSys").value; }
   saveGenOpts(it, f);
   $$("#imgModeSw [data-mode]").forEach((x) => x.classList.toggle("on", x === b));
-  $("#imgFeatherRow").hidden = !(it.base_upload && it.repaint) && !((it.kind === "first" || it.kind === "last") && it.mode === "inpaint");
+  $("#imgFeatherRow").hidden = !(it.base_upload && it.repaint) && !(isStill(it) && it.mode === "inpaint");
 });
 
 // 图片结果：左边大图看选用的（没选就最新的一张），右边列出这一张生成出来的全部候选；背景图也是同一套格式
@@ -1012,7 +1035,7 @@ async function autoRefreshBases() {
   autoRefreshing = true;
   try {
     const { base_fresh } = await api(`/api/p/${S.pid}/images_sig`);
-    const old = imgTabs().filter((t) => (t.kind === "first" || t.kind === "last") && !t.base_upload && !t.base_from && (base_fresh || {})[t.id] === false);
+    const old = imgTabs().filter((t) => isStill(t) && !t.base_upload && !t.base_from && (base_fresh || {})[t.id] === false);
     for (const t of old) await api(`/api/p/${S.pid}/images/${t.id}/base_reset`, { method: "POST" });
     if (old.length) {
       const names = old.map((t) => imgLabel(t)).join(uiLanguage === "en" ? ", " : "、");
@@ -1023,3 +1046,18 @@ async function autoRefreshBases() {
   finally { autoRefreshing = false; }
 }
 
+
+$("#imgKeyFrame").onchange = async () => {                           // 关键帧改帧号：按新的那一帧重新取画面（旧候选不再列出）
+  const it = curImg(), v = parseInt($("#imgKeyFrame").value, 10);
+  if (!it || it.kind !== "key") return;
+  if (!Number.isFinite(v) || v < 0 || v >= S.d.n) { $("#imgKeyFrame").value = it.frame ?? 0; return setLog(uiLanguage === "en" ? `Frame number must be 0–${S.d.n - 1}` : `帧号要在 0–${S.d.n - 1} 之间`, true); }
+  if (v === it.frame) return;
+  if (it.cands && it.cands.length && !(await uiConfirm(T("改帧号会重新取画面，这张关键帧现在的候选不再列出（文件留着）。继续？"), { ok: T("改帧号") }))) {
+    $("#imgKeyFrame").value = it.frame ?? 0; return;
+  }
+  try {
+    await api(`/api/p/${S.pid}/images/${it.id}/frame`, { json: { frame: v } });
+    await watchJob();
+    setProject(await api(`/api/p/${S.pid}`), true);
+  } catch (err) { setLog(err.message, true); }
+};

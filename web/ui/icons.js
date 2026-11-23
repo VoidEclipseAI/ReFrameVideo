@@ -63,6 +63,7 @@
     pause: '<rect x="7" y="5" width="3.6" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="13.4" y="5" width="3.6" height="14" rx="1" fill="currentColor" stroke="none"/>',
     "skip-back": '<path d="M19.5 19.5L9 12l10.5-7.5z"/><path d="M5 19V5"/>',
     "skip-forward": '<path d="M4.5 4.5L15 12 4.5 19.5z"/><path d="M19 5v14"/>',
+    scissors: '<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 7.6L20 18M8.2 16.4L20 6"/>',
     zap: '<path d="M13 2.5L4 14h7l-1 7.5L20 10h-7l1-7.5z"/>',
     dice: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/>',
     image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M20.5 15.5l-5-5-10 9.5"/>',

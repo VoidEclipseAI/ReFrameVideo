@@ -163,6 +163,7 @@
       <button id="firstFrameBtn" class="icon-btn" data-icon="skip-back" title="第一帧" aria-label="第一帧"></button>
       <button id="lastFrameBtn" class="icon-btn" data-icon="skip-forward" title="最后一帧" aria-label="最后一帧"></button>
       <button id="cacheBtn" class="icon-btn" data-icon="zap" title="缓存整段" aria-label="缓存整段"></button>
+      <button id="trimBtn" class="icon-btn" data-icon="scissors" title="切出选区：时间轴蓝色选区以外的帧去掉，另存成新项目（原项目不动）" aria-label="切出选区"></button>
       <span id="loading"></span>
       <span class="hint" id="hint">点画面里的主体，浮动条上可以直接缩放、改边缘</span>
     </div>
@@ -548,6 +549,8 @@
         <div class="panel" id="refGenPanel">
           <h3 class="rg-head">图片生成 <span class="sub" id="rgKind"></span>
             <button id="imgToRes" type="button" class="linkbtn" title="生成出来的图都在「图片结果」里选用">查看结果（<span id="imgResN">0</span>）</button></h3>
+          <label class="row key-row" id="imgKeyRow" hidden title="这张关键帧是视频第几帧。改了按新的那一帧重新取画面（旧候选不再列出）；生成视频时当参考图，提示词写明它在第几秒">关键帧位置
+            <input id="imgKeyFrame" type="number" min="0" step="1"><span class="sub" id="imgKeySec"></span></label>
           <div class="eng-row">
           <div class="seg rg-engine" id="imgEngineSw" role="radiogroup" aria-label="用 ComfyUI 还是云端 API">
             <button type="button" data-eng="comfy" title="用 ComfyUI 生成（Qwen Image 2.1 或自己的工作流）">ComfyUI</button>

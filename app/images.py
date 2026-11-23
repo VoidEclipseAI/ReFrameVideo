@@ -19,7 +19,8 @@ from PIL import Image
 from project import obj_word
 from regions import MASK_OPTS, MASK_OPTS_V1, frame_rect
 
-KINDS = {"first": "首帧", "last": "尾帧", "bg": "背景图", "card": "资料卡"}
+KINDS = {"first": "首帧", "last": "尾帧", "bg": "背景图", "card": "资料卡", "key": "关键帧"}
+STILLS = ("first", "last", "key")   # 视频里某一帧的画面（按图层摆放取）：首帧 = 第 0 帧、尾帧 = 最后一帧、关键帧 = 建的时候播放头停的那一帧
 N_CANDS = 4
 CARD_CANVAS = (1536, 1024)          # 三视图要横向的画布（和 lora_unified/make_refs.py 一样）
 
@@ -119,6 +120,27 @@ def anchors(p, vid=None):
     return out
 
 
+def still_index(p, it):
+    """首帧 / 尾帧 / 关键帧取的是视频第几帧。"""
+    if it["kind"] == "key":
+        return min(max(int(it.get("frame") or 0), 0), p.data["n"] - 1)
+    return 0 if it["kind"] == "first" else p.data["n"] - 1
+
+
+def keys(p, vid=None):
+    """这个版本的关键帧标签（可以多张，按帧号排）。"""
+    vid = vid or p.data["current"]
+    return sorted((it for it in items(p) if it["kind"] == "key" and it.get("version") == vid), key=lambda it: (still_index(p, it), it["id"]))
+
+
+def item_pick_path(p, it):
+    """这个标签选用的那张（没有就 None）。"""
+    if not it or not it.get("pick"):
+        return None
+    f = p.image_dir(it) / f"{it['pick']}.png"
+    return f if f.exists() else None
+
+
 def find(p, kind, oid=None, vid=None):
     """图片标签跟着版本走：首帧 / 尾帧取画面时记下 version，只在那个版本里用；没记 version 的旧标签所有版本都能用
     （同一版本里有新的就用新的）。资料卡按图层找（图层本来就属于某个版本）；背景图全项目一个。"""
@@ -137,7 +159,7 @@ def add_cand_upload(p, iid, data):
     name = f"cand_{seed}"
     open_upload(data).save(folder(p, iid) / f"{name}.png")
     it["cands"].append(name)
-    if it["kind"] in ("first", "last"):
+    if it["kind"] in STILLS:
         it.setdefault("cand_sig", {})[name] = layer_sig(p)   # 上传的当成按现在的图层做的
     import time
     it.setdefault("cand_info", {})[name] = {"time": time.strftime("%Y-%m-%d %H:%M"), "upload": True}
@@ -282,6 +304,8 @@ def pick(p, iid, name):
 
 def _kind_name(it):
     import re
+    if it["kind"] == "key":                              # 关键帧可以多张：文件名带帧号
+        return f"关键帧{int(it.get('frame') or 0)}"
     return KINDS[it["kind"]] if it["kind"] != "card" else re.sub(r'[\\/:*?"<>|]', "_", it.get("label", "资料卡")).replace(" · ", "_")
 
 
@@ -336,11 +360,7 @@ def remove(p, iid):
 
 def picked_path(p, kind, oid=None, vid=None):
     """合成时用：这类图片挑好的那张（没有就 None）。"""
-    it = find(p, kind, oid, vid)
-    if not it or not it.get("pick"):
-        return None
-    f = p.image_dir(it) / f"{it['pick']}.png"
-    return f if f.exists() else None
+    return item_pick_path(p, find(p, kind, oid, vid))
 
 
 def file_path(p, iid, name):

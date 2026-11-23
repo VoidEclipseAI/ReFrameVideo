@@ -3,7 +3,7 @@
    后端 /api/gallery*（app/gallery.py）只读，不经过 proj()，不会放掉当前项目的遮罩缓存。 */
 (() => {
   const q = (s, r = document) => r.querySelector(s);
-  const KIND = { first: "首帧", last: "尾帧", card: "资料卡", bg: "背景图" };
+  const KIND = { first: "首帧", last: "尾帧", card: "资料卡", bg: "背景图", key: "关键帧" };
   const ALL_KEY = "vps_gallery_all";
   let items = [], filter = "all", pidSel = "", showAll = false;
   try { showAll = localStorage.getItem(ALL_KEY) === "1"; } catch {}

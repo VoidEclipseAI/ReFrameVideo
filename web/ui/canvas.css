@@ -154,7 +154,9 @@ body[data-tab="still"] :is(#maskPanel, #mattePanel) .mctl.ovr { box-shadow: inse
 .handle[data-h=start] { left: -4px; } .handle[data-h=end] { right: -4px; }
 #playhead { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #fff; pointer-events: none; }
 /* 图层条：一行一个图层（点一下选中），区域高度可以拖 #barsGrip 调，放不下就滚动 */
-#objBars { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; height: var(--bars-h, 76px); overflow-y: auto; padding: 3px 4px 3px 0; }
+#objBars { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; height: var(--bars-h, 76px); overflow-y: auto; padding: 3px 0;
+  scrollbar-width: none; }   /* 滚动条藏起来（滚轮照样能滚）：图层条和上面时间轴一样宽、帧位置对齐 */
+#objBars::-webkit-scrollbar { display: none; }
 #objBars:empty { display: none; }
 .bar { position: relative; height: 12px; flex: none; cursor: pointer; }
 .bar div { position: absolute; top: 0; bottom: 0; border-radius: 3px; opacity: .75; }

@@ -21,6 +21,11 @@ import roughcut
 from engine import h3_canvas
 from regions import explicit_mask, BODY, TRANS_T, disk, keepout, redrawn, temporal_grow, trans_opts
 
+# 关键帧钉帧（MiniMaxH3AddGuide）：默认关（2026-11-23 用户定）。5 个案例里钉帧只让那一帧略近一点，
+# 还可能在钉住的那一帧附近跳一下（53b7、2dd6）；关键帧只当 <Picture N> + 提示词写秒数。
+KEY_PIN = False
+
+
 @dataclass
 class Pass:
     label: str
@@ -33,6 +38,7 @@ class Pass:
     audio: object = None                 # 原片（取音轨），和粗剪一起编码，声音不重绘
     partial: object = None               # 主体重绘强度：(像素 (n,h,w) bool, 强度 0~1)；None = 本体不重绘（默认）
     seed: int = field(default_factory=lambda: random.randint(0, 2**31 - 1))
+    pins: list = field(default_factory=list)     # 关键帧钉帧：[(参考图下标, 视频帧号)]，同一张图既是 <Picture N> 又钉在这一帧（MiniMaxH3AddGuide）
 
 
 def grow(masks, px):
@@ -280,6 +286,34 @@ def prepare_compose(project, engine, op, log, build_prompt=True, mention_fmt=Non
         pic_labels.append(IM.KINDS[end])
         ends.append((end, f, i))
         log(f"  {IM.KINDS[end]}（只当参考图，不钉进粗剪）：{f}")
+    pins, key_ids = [], []                               # 关键帧（可以多张）：当 <Picture N>；KEY_PIN 开时同时钉在它那一帧
+    for it in IM.keys(project, c["base"]):
+        i = IM.still_index(project, it)
+        name = f"关键帧（第 {i} 帧）"
+        want = (op.get("anchors") or {}).get(f"key:{it['id']}")
+        if want is False:
+            log(f"  不传{name}（没勾）")
+            continue
+        f = IM.item_pick_path(project, it)
+        if not f:
+            continue
+        if not IM.sig_close(IM.pick_sig(it), IM.layer_sig(project, c["base"])):
+            if want is True:
+                log(f"  {name}是按旧的图层摆放取的，勾了照样用")
+            else:
+                log(f"  {name}是按旧的图层摆放取的，这次没用上；请在这个关键帧标签里点「重新取画面」再挑一张")
+                continue
+        a = Image.open(f)
+        if a.size != (W, H):
+            log(f"  {name}是 {a.size[0]}x{a.size[1]}，这次按 {W}x{H} 生成，对不上，没用上；请在这个关键帧标签里点「重新取画面」")
+            continue
+        if KEY_PIN:
+            pins.append((len(pics), i))
+        pics.append(f)
+        pic_labels.append(name)
+        ends.append(("key", f, i))
+        key_ids.append(it["id"])
+        log(f"  {name}：当参考图，并钉在第 {i} 帧：{f}" if KEY_PIN else f"  {name}：当参考图（不钉帧）：{f}")
     bg_ref = None
     pano = PANO.load(project)
     if pano is not None and op.get("use_bg", True):      # 参考图-背景图：全景图变换到中间帧
@@ -294,8 +328,8 @@ def prepare_compose(project, engine, op, log, build_prompt=True, mention_fmt=Non
     extras = extra_refs(project, op.get("extra_refs"))    # 其他图片：用户自己上传的额外参考图
     for label, f, _ in extras:
         log(f"  {label}：当参考图（{f}）")
-    # 用户提示词 / 系统提示词里的「@名称」→ 这次实际的图号（mentions.py）：顺序 = 首帧、尾帧、背景图、资料卡、其他图片（跳过的不算）
-    keys = [e for e, _, _ in ends] + (["bg"] if bg_ref else []) + [f"card:{oid}" for oid, _ in cards] + [f"other:{rid}" for _, _, rid in extras]
+    # 用户提示词 / 系统提示词里的「@名称」→ 这次实际的图号（mentions.py）：顺序 = 首帧、尾帧、关键帧、背景图、资料卡、其他图片（跳过的不算）
+    keys = [e for e, _, _ in ends if e != "key"] + [f"key:{k}" for k in key_ids] + (["bg"] if bg_ref else []) + [f"card:{oid}" for oid, _ in cards] + [f"other:{rid}" for _, _, rid in extras]
     mentions = MN.parse(op.get("mentions"))
     pic, vid_fmt = mention_fmt or ((MN.PICTURE_H3, MN.VIDEO_H3) if build_prompt else (MN.PICTURE_API_VIDEO, MN.VIDEO_API_VIDEO))
     user_prompt = MN.resolve(str(op.get("prompt") or ""), mentions, keys, pic, vid_fmt, log=log)
@@ -327,7 +361,7 @@ def prepare_compose(project, engine, op, log, build_prompt=True, mention_fmt=Non
             mask |= temporal_grow(mask, TRANS_T) & ~np.stack([keepout(z == BODY, av) for z in zones])
     p = Pass("合成", work / "composite.mp4", mask, prompt, 1.0,
              refs=pics + ([bg_ref] if bg_ref else []) + [Path(f) for _, f in cards] + [f for _, f, _ in extras],
-             seed=int(op.get("seed", 42)),
+             seed=int(op.get("seed", 42)), pins=pins,
              ref_labels=pic_labels + (["背景图"] if bg_ref else []) + [f"资料卡：{project.obj(oid)['name']}" for oid, _ in cards]
              + [label for label, _, _ in extras])
     p.audio = project.video("v0")                        # 原片音轨：和粗剪一起编码，声音不重绘

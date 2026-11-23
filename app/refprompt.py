@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from images import OLD_REF_NOTE_CARD, REF_NOTE_CARD, folder, get, ref_list
+from images import OLD_REF_NOTE_CARD, REF_NOTE_CARD, STILLS, folder, get, ref_list
 
 # 首帧 / 尾帧的系统基础提示：只说「补没画完的地方、其余不动」，不点名任何物体，适用于去除 / 移动 / 缩放 / 扩画框各种情况。
 # 想要什么具体内容写在用户描述里（标签上那一段，可以让 Qwen-VL 看图写），两段拼起来发给 Qwen：描述在前，基础提示在后。
@@ -241,7 +241,7 @@ def describe(p, engine, iid, log=print):
     d = folder(p, iid)
     q = DESCRIBE_CARD if it["kind"] == "card" else DESCRIBE_KEYFRAME
     img = d / "input.png"
-    if it["kind"] in ("first", "last"):                  # 看原片这一帧（干净的），不看粗合成：粗合成里的模糊残影会被写成
+    if it["kind"] in STILLS:                  # 看原片这一帧（干净的），不看粗合成：粗合成里的模糊残影会被写成
         img = d / "orig.png"                             # “后面还有个模糊的人”，Qwen 照着把残影留下来（第 5 段）
         Image.fromarray(p.frame(it.get("version", p.data["current"]), it["frame"])).save(img)
     it["desc"] = (engine.describe(img, q, log, 120) or "").strip()

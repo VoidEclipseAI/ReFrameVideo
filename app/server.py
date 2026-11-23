@@ -211,7 +211,7 @@ def proj(pid) -> Project:
     return _projects[pid]
 
 
-IM_NAMES = {"first": "首帧", "last": "尾帧", "bg": "背景图", "card": "资料卡"}
+IM_NAMES = {"first": "首帧", "last": "尾帧", "bg": "背景图", "card": "资料卡", "key": "关键帧"}
 
 
 def start_job(fn, name=None, pid=None):
@@ -221,7 +221,7 @@ def start_job(fn, name=None, pid=None):
 
 # ---------- 项目 ----------
 
-API_VERSION = 255        # 前端会检查：服务端比页面旧时提示重启
+API_VERSION = 259        # 前端会检查：服务端比页面旧时提示重启
 
 
 @app.get("/api/info")
@@ -432,6 +432,15 @@ def image_create(pid: str, body: dict = Body(...)):
     """新建图片标签（已有同类的就直接返回它）。取原图要合成一帧，放到后台任务里做。"""
     p = proj(pid)
     kind, oid = body.get("kind"), body.get("oid")
+    if kind == "key":                                    # 关键帧：可以多张，frame = 视频编辑播放头停的那一帧
+        try:
+            frame = int(body.get("frame"))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "关键帧要给帧号")
+        if not 0 <= frame < p.data["n"]:
+            raise HTTPException(400, f"帧号 {frame} 超出范围（0–{p.data['n'] - 1}）")
+        start_job(lambda log: RE.create(p, kind, None, log, frame=frame), "关键帧准备", pid)
+        return {"pending": True}
     old = IM.find(p, kind, oid)
     if old or kind == "bg":
         return RE.create(p, kind, oid)
@@ -439,6 +448,22 @@ def image_create(pid: str, body: dict = Body(...)):
         raise HTTPException(400, "资料卡要指定一个图层")
     start_job(lambda log: RE.create(p, kind, oid, log), IM_NAMES.get(kind, "图片") + "准备", pid)
     return {"pending": True}
+
+
+@app.post("/api/p/{pid}/images/{iid}/frame")
+def image_key_frame(pid: str, iid: str, body: dict = Body(...)):
+    """关键帧改帧号：按新的那一帧重新取画面（旧候选从列表去掉，文件留着）。"""
+    p = proj(pid)
+    it = IM.get(p, iid)
+    if it["kind"] != "key":
+        raise HTTPException(400, "只有关键帧能改帧号")
+    try:
+        frame = int(body.get("frame"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "帧号要是整数")
+    if not 0 <= frame < p.data["n"]:
+        raise HTTPException(400, f"帧号 {frame} 超出范围（0–{p.data['n'] - 1}）")
+    return start_job(lambda log: RE.set_key_frame(p, it, frame, log), "关键帧提取画面", pid)
 
 
 @app.post("/api/p/{pid}/images/{iid}/base")
@@ -524,7 +549,7 @@ def export_image(pid: str, iid: str, body: dict = Body(...)):
         raise HTTPException(400, "这张图还没有画面：先在图片编辑里出一次候选或刷新原图")
     d = IM.folder(p, iid)
     refs, keys = [], ["base"]
-    if it["kind"] in ("first", "last") and it.get("use_bg", True) and not it.get("base_upload"):
+    if it["kind"] in IM.STILLS and it.get("use_bg", True) and not it.get("base_upload"):
         bg = PANO.to_frame(p, it["frame"], d, it.get("bg_choice"))
         if bg:
             refs.append(("background", bg))
@@ -1335,7 +1360,7 @@ def image_sig(pid: str):
             "anchors": IM.anchors(p),
             # 首帧 / 尾帧的画面（base.png）是不是按现在的编辑取的：不是 = 界面上「刷新」按钮标出来
             "base_fresh": {it["id"]: it.get("base_key") == RE.base_key(p, it) for it in IM.items(p)
-                           if it["kind"] in ("first", "last") and not it.get("base_upload")
+                           if it["kind"] in IM.STILLS and not it.get("base_upload")
                            and it.get("version", p.data["current"]) == p.data["current"]}}
 
 
@@ -1346,8 +1371,8 @@ def image_region(pid: str, iid: str, img_close: int = -1, img_grow: int = -1, im
     参数没给（-1）就用这张图存的值；按现在的视频编辑 + 单图覆盖算，和出候选时一样。"""
     p = proj(pid)
     it = IM.get(p, iid)
-    if it["kind"] not in ("first", "last"):
-        raise HTTPException(400, "只有首帧 / 尾帧有补图范围")
+    if it["kind"] not in IM.STILLS:
+        raise HTTPException(400, "只有首帧 / 尾帧 / 关键帧有补图范围")
     q = dict(img_close=img_close, img_grow=img_grow, img_edge=img_edge, img_mgrow=img_mgrow, img_occ=img_occ)
     o = {k: (q[k] if q[k] >= 0 else int(it.get(k, v))) for k, v in RE.IMG_MASK_DEFAULTS.items()}
     with _zone_lock:
@@ -1361,8 +1386,8 @@ def image_region(pid: str, iid: str, img_close: int = -1, img_grow: int = -1, im
 async def image_background_upload(pid: str, iid: str, request: Request):
     p = proj(pid)
     it = IM.get(p, iid)
-    if it["kind"] not in ("first", "last"):
-        raise HTTPException(400, "仅首尾帧可换背景参考")
+    if it["kind"] not in IM.STILLS:
+        raise HTTPException(400, "仅首尾帧 / 关键帧可换背景参考")
     try:
         img = IM.open_upload(await request.body())
     except (OSError, ValueError):
@@ -1746,6 +1771,19 @@ def ghost(pid: str, oid: str, i: int, e: str = "", g: str = ""):
 
 # ---------- 分割 / 操作 ----------
 
+@app.post("/api/p/{pid}/trim")
+def trim_project(pid: str, body: dict = Body(...)):
+    """时间轴「切出选区」：第 start–end 帧另存成新项目并打开（原项目不动；当前版本的图层、画幅带过去）。"""
+    p = proj(pid)
+    a, b = int(body["start"]), int(body["end"])
+    if a > b or a < 0 or b >= int(p.data["n"]):
+        raise HTTPException(400, "帧范围不对")
+    if a == 0 and b == int(p.data["n"]) - 1:
+        raise HTTPException(400, "选区就是整段视频，不用切")
+    p.log_action("trim", start=a, end=b)
+    return start_job(lambda log: dict(open_project=p.trim_copy(PROJECTS, a, b, log).data["id"]), "切出选区", pid)
+
+
 @app.post("/api/p/{pid}/segment")
 def segment(pid: str, body: dict = Body(...)):
     p = proj(pid)
@@ -1991,7 +2029,7 @@ def obj_stats(pid: str, oid: str):
 @app.post("/api/p/{pid}/gen_prompt/preview")
 def gen_prompt_preview(pid: str, body: dict = Body(...)):
     """视频生成面板：按现在勾的参考图算出默认系统提示词（和生成时 repair_prompt.system_prompt 同一套）。
-    body = {version, anchors: {first, last}, use_bg, cards: [图层 id]}；首帧 / 尾帧要真有选用的图才算。"""
+    body = {version, anchors: {first, last, "key:<标签 id>"}, use_bg, cards: [图层 id]}；首帧 / 尾帧 / 关键帧要真有选用的图才算。"""
     import images as IM
     from repair_prompt import system_prompt
     p = proj(pid)
@@ -2001,7 +2039,8 @@ def gen_prompt_preview(pid: str, body: dict = Body(...)):
     has = lambda k: bool(a.get(k)) and bool(IM.picked_path(p, k, vid=vid))
     cards = [oid for oid in body.get("cards") or [] if any(o["id"] == oid for o in p.objects_in(vid))]
     has_bg = bool(body.get("use_bg")) and PANO.load(p) is not None
-    prompt, _ = system_prompt(p, has("first"), has("last"), has_bg, cards, vid, relight=float(body.get("body_redraw") or 0) > 0)
+    keys = [IM.still_index(p, it) / p.data["fps"] for it in IM.keys(p, vid) if a.get(f"key:{it['id']}") and IM.item_pick_path(p, it)]
+    prompt, _ = system_prompt(p, has("first"), has("last"), has_bg, cards, vid, relight=float(body.get("body_redraw") or 0) > 0, keys=keys)
     return {"system": prompt}
 
 
@@ -2061,7 +2100,7 @@ async def add_shape(pid: str, request: Request):
     if bgswap:                                            # 换背景：旧背景图会把旧背景画回来，首帧 / 尾帧自动不带背景图、空区涂灰（用户可以再勾回来）
         no["bgswap"] = True
         for it in p.data.get("images", []):
-            if it.get("kind") in ("first", "last") and it.get("version") == vid:
+            if it.get("kind") in IM.STILLS and it.get("version") == vid:
                 it["use_bg"] = False
                 if it.get("fill") == "bg":
                     it["fill"] = "grey"

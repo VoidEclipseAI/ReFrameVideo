@@ -522,6 +522,154 @@ class Project:
         p.save()
         return p
 
+    def trim_copy(self, projects_dir: Path, a: int, b: int, log=print):
+        """把第 a–b 帧（含）另存成一个新项目（时间轴「切出选区」）。原项目不动；当前版本的图层、画幅按新帧号带过去（_carry_layers）。
+        从项目里的原视频按帧号剪（缩过的项目原视频更清楚，帧号和工作视频一一对应）；帧数对不上就用 v0 工作视频。返回新项目。"""
+        n = int(self.data["n"])
+        a, b = max(0, int(a)), min(n - 1, int(b))
+        if a > b:
+            raise ValueError("选区是空的")
+        if a == 0 and b == n - 1:
+            raise ValueError("选区就是整段视频，不用切")
+        src = next(iter(sorted(self.root.glob("原视频.*"))), None)
+        if src is None or probe(src)[2] != n:
+            src = self.video("v0")
+        fps = float(self.data["fps"])
+        k = b - a + 1
+        log(f"切出第 {a}–{b} 帧（{k} 帧，{k / fps:.2f} 秒）")
+        has_audio = bool(subprocess.run([FFPROBE, "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
+                                         "-of", "csv=p=0", str(src)], capture_output=True).stdout.strip())
+        fc = f"[0:v]trim=start_frame={a}:end_frame={b + 1},setpts=PTS-STARTPTS[v]"
+        maps = ["-map", "[v]"]
+        if has_audio:
+            fc += f";[0:a]atrim=start={a / fps:.6f}:end={(b + 1) / fps:.6f},asetpts=PTS-STARTPTS[a]"
+            maps += ["-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
+        tmp = self.cache_dir() / f"trim_{a}_{b}.mp4"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        r = subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(src), "-filter_complex", fc, *maps, "-fps_mode", "passthrough",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "12", str(tmp)], capture_output=True)
+        if r.returncode:
+            raise RuntimeError("剪视频失败：" + r.stderr.decode("utf-8", "replace")[-300:])
+        try:
+            log("建新项目（预览帧…）")
+            q = Project.create(projects_dir, str(tmp))
+        finally:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        q.data["name"] = f"{self.data.get('name', '')} · 第{a}-{b}帧"
+        q.data["trimmed_from"] = {"id": self.data["id"], "start": a, "end": b, "version": self.data.get("current")}
+        if (q.data["n"], q.data["w"], q.data["h"]) != (k, self.data["w"], self.data["h"]):
+            log(f"注意：新项目是 {q.data['w']}×{q.data['h']}、{q.data['n']} 帧，和原项目对不上，图层和画幅没带过来，要重新识别")
+        else:
+            self._carry_layers(q, a, b, log)
+        q.save()
+        return q
+
+    def _carry_layers(self, q, a, b, log=print):
+        """切出选区时把当前版本的编辑带进新项目（新项目只有 v0）：画幅、边界融合设置、图层（SAM 遮罩 / 柔边 / 逐帧修整按帧切、
+        变换和蒙版设置照搬、帧范围 / 扩绘区 / 局部保留的帧号减 a）。完全落在选区外的图层不带。"""
+        import copy
+        vid = self.data.get("current") or "v0"
+        k = b - a + 1
+        md = q.root / "masks"
+        md.mkdir(exist_ok=True)
+        done = set()
+
+        def rng(s, e):                                     # 原帧范围 → 新帧范围；不重叠 = None
+            s, e = int(s), int(e)
+            if e < a or s > b:
+                return None
+            return max(s, a) - a, min(e, b) - a
+
+        def carry_files(o):
+            mid = o.get("mask")
+            if mid and mid not in done:
+                m = self.raw_masks_by_id(mid)[a:b + 1]
+                np.savez_compressed(md / f"{mid}.npz", shape=np.array(m.shape), bits=np.packbits(m))
+                done.add(mid)
+            aid = o.get("alpha")
+            if aid and "alpha_" + aid not in done:
+                f = self.root / "masks" / f"alpha_{aid}.npz"
+                if f.exists():
+                    np.savez_compressed(md / f"alpha_{aid}.npz", alpha=np.load(f)["alpha"][a:b + 1])
+                done.add("alpha_" + aid)
+            eid = o.get("edits")
+            if eid and "edits_" + eid not in done:
+                f = self.root / "masks" / f"edits_{eid}.npz"
+                if f.exists():
+                    with np.load(f) as z:
+                        out = {f"{c}{int(x[1:]) - a}": z[x] for x in z.files for c in [x[0]] if a <= int(x[1:]) <= b}
+                    np.savez_compressed(md / f"edits_{eid}.npz", **out)
+                done.add("edits_" + eid)
+            if o.get("medits"):
+                o["medits"] = {str(int(i) - a): v for i, v in o["medits"].items() if a <= int(i) <= b}
+            if o.get("bboxes"):
+                o["bboxes"] = o["bboxes"][a:b + 1]
+                bs = [x for x in o["bboxes"] if x]
+                if bs and o.get("bbox"):                   # 整段外框（= 变换中心）换成选区里的；平移补回，画面不变：t' = t + (I − A)(c − c')
+                    from regions import is_identity, layer_matrix
+                    nb = [min(x[0] for x in bs), min(x[1] for x in bs), max(x[2] for x in bs), max(x[3] for x in bs)]
+                    tf = o.get("tf") or {}
+                    if not is_identity(tf):
+                        A = layer_matrix(dict(tf=tf, bbox=[0, 0, 0, 0]))[:, :2].astype(float)
+                        c = np.array([(o["bbox"][0] + o["bbox"][2]) / 2, (o["bbox"][1] + o["bbox"][3]) / 2])
+                        c2 = np.array([(nb[0] + nb[2]) / 2, (nb[1] + nb[3]) / 2])
+                        dx, dy = (np.eye(2) - A) @ (c - c2)
+                        o["tf"] = dict(tf, x=float(tf.get("x", 0) + dx), y=float(tf.get("y", 0) + dy))
+                    o["bbox"] = [int(v) for v in nb]
+            for km in o.get("keep_masks") or []:
+                f = self.root / "masks" / f"keep_{km['id']}.png"
+                if f.exists():
+                    shutil.copy2(f, md / f.name)
+            keeps = []
+            for km in o.get("keep_masks") or []:
+                r = rng(km.get("start", 0), km.get("end", self.data["n"] - 1))
+                if r:
+                    km["start"], km["end"] = r
+                    km["frame"] = min(max(int(km.get("frame", a)), a), b) - a
+                    keeps.append(km)
+            if "keep_masks" in o:
+                o["keep_masks"] = keeps
+            exts = []
+            for em in o.get("ext_masks") or []:
+                r = rng(em.get("start", 0), em.get("end", self.data["n"] - 1))
+                if r:
+                    em["start"], em["end"] = r
+                    exts.append(em)
+            if "ext_masks" in o:
+                o["ext_masks"] = exts
+
+        objs = []
+        for o in self.data["objects"]:
+            if o.get("version") != vid:
+                continue
+            r = rng(o.get("start", 0), o.get("end", self.data["n"] - 1))
+            if not r:
+                continue
+            o = copy.deepcopy(o)
+            o["version"] = "v0"
+            o["start"], o["end"] = r
+            carry_files(o)
+            parts = []
+            for part in o.get("parts", []):
+                pr = rng(part.get("start", 0), part.get("end", self.data["n"] - 1))
+                if pr:
+                    part["version"] = "v0"
+                    part["start"], part["end"] = pr
+                    carry_files(part)
+                    parts.append(part)
+            if "parts" in o:
+                o["parts"] = parts
+            objs.append(o)
+        q.data["objects"] = objs
+        q.data["color_i"] = self.data.get("color_i", 0)
+        for key in ("frame", "trans", "parts_pixels"):
+            if key in self.data:
+                q.data[key] = copy.deepcopy(self.data[key])
+        log(f"带过来 {len(objs)} 个图层和画幅（第 {a}–{b} 帧 → 新项目第 0–{k - 1} 帧）")
+
     def log_action(self, act, **data):
         """操作记录（设置里可关，默认开）：项目文件夹里的 操作记录log.jsonl，一行一条，只往后加。
         存的是改了哪些字段、改之前 / 之后的值（不存像素：遮罩本来就是单独的文件）。超过 ACTION_LOG_MB 就把旧的改名留着、另起一个。
@@ -808,7 +956,7 @@ class Project:
             except (ValueError, TypeError, IndexError, KeyError):
                 return s
         bkey = lambda v, it: json.dumps([IM.edit_sig(self, v), it.get("layer_opts") or {}], sort_keys=True)   # = refedit.base_key
-        for it in [it for it in self.data.get("images", []) if it.get("version") == src and it["kind"] in ("first", "last", "card")]:
+        for it in [it for it in self.data.get("images", []) if it.get("version") == src and it["kind"] in ("first", "last", "key", "card")]:
             c = json.loads(json.dumps(it))
             c["id"], c["version"] = uuid.uuid4().hex[:8], vid
             if c.get("oid"):
@@ -925,7 +1073,10 @@ class Project:
 
     def raw_masks(self, oid):
         """SAM 3.1 的原始遮罩（不含手动修改）。"""
-        mid = self.obj(oid)["mask"]
+        return self.raw_masks_by_id(self.obj(oid)["mask"])
+
+    def raw_masks_by_id(self, mid):
+        """masks/<mid>.npz 解包成 (帧, 高, 宽) bool，有缓存。"""
         if mid not in self._mask_cache:
             z = np.load(self.root / "masks" / f"{mid}.npz")
             shape = tuple(z["shape"])

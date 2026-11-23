@@ -1097,3 +1097,12 @@ body.gen-api #genFilesBtn, body.img-api #imgFilesBtn { display: none; }
 .guide-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); cursor: pointer; }
 .guide-dots i.on { background: var(--accent); }
 #guideMore { text-decoration: none; }
+
+/* 「正在加载」小窗（01-core.js uiBusy） */
+.busy-dlg { z-index: 210; }
+.busy-dlg .dlg-card { width: min(380px, 92vw); display: flex; align-items: center; gap: 14px; padding: 18px 20px; }
+.busy-dlg .busy-t { font-size: 14px; font-weight: 600; color: var(--text); }
+.busy-dlg .busy-s { margin-top: 4px; font-size: 12px; color: var(--sub, var(--muted)); line-height: 1.5; word-break: break-all; }
+.busy-spin { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--line, rgba(128,128,128,.3)); border-top-color: var(--accent); animation: busy-spin .8s linear infinite; }
+@keyframes busy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .busy-spin { animation-duration: 2.4s; } }

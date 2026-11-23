@@ -37,7 +37,7 @@
     if (pid === S.pid) return render();                   // 分段页盖着的就是这个项目：关掉分段页就好
     const tok = ++openTok;                               // 快速连点几个标签：只用最后一次的回包
     try {
-      const d = await api(`/api/p/${encodeURIComponent(pid)}`);
+      const d = await withBusy(T("正在加载项目…"), () => api(`/api/p/${encodeURIComponent(pid)}`));
       if (tok !== openTok) return;
       setProject(d);
       let st = null;

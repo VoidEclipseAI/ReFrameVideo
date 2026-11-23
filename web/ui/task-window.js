@@ -190,7 +190,7 @@
     if (!opts || !opts.method || opts.method === "GET") return;
     let name = null;
     const image = s?.d?.images?.find?.((i) => path.includes("/images/" + i.id + "/"));
-    const kind = { first: T("首帧"), last: T("尾帧"), bg: T("背景图"), card: T("资料卡") }[image?.kind || opts.json?.kind] || T("图片");
+    const kind = { first: T("首帧"), last: T("尾帧"), bg: T("背景图"), card: T("资料卡"), key: T("关键帧") }[image?.kind || opts.json?.kind] || T("图片");
     if (/\/segment$/.test(path)) name = T("主体识别");
     else if (/\/parts$/.test(path)) name = T("部位识别");
     else if (/\/op$/.test(path)) name = T("视频生成");

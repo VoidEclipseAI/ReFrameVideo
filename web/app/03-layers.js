@@ -221,7 +221,7 @@ const MASK_DEFAULT = { hole_rect: 3, hole_dilate: 0, hole_t: 0, ring_redraw: 3, 
   box_redraw: null, edge_fill: null, hole_prefill: null };
 const MATTE_FIELDS = ["edge", "grow", "fill_holes", "despeckle", "smooth_t"];
 const MATTE_DEFAULT = { edge: "sam", grow: 0, fill_holes: 0, despeckle: 0, smooth_t: 0 };
-const imgEditing = () => { if (S.tab === "video" || typeof curImg !== "function") return null; const it = curImg(); return it && (it.kind === "first" || it.kind === "last") ? it : null; };
+const imgEditing = () => { if (S.tab === "video" || typeof curImg !== "function") return null; const it = curImg(); return it && isStill(it) ? it : null; };
 const effObj = (o) => { const it = imgEditing(); return it ? { ...o, ...((it.layer_opts || {})[o.id] || {}) } : o; };
 async function imgLayerEdit(os, fn) {
   const it = imgEditing();

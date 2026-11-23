@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 import panorama as PANO
-from images import folder, get, link_cand, next_cand
+from images import STILLS, folder, get, link_cand, next_cand
 import mentions as MN
 from refedit import IMG_MASK_DEFAULTS, REPAINT_FEATHER, card_sys, ensure_base, feather_in, load_repaint, region
 from refprompt import (FILLS, PE_ASK_REPAINT, REPAINT_PROMPT, UPLOAD_PROMPT, body_sentence, fill_words, gen_layout, gen_mode, keyframe_prompt,
@@ -26,14 +26,14 @@ def candidates(p, engine, iid, desc, sys, count, log=print, use_bg=None, fill=No
     if mode in ("inpaint", "gen"):                       # 先定模式：基础提示、PE 指令都跟着模式走
         it["mode"] = mode
     it["desc"] = desc.strip()
-    it["sys"] = sys_for(it, sys) if it["kind"] in ("first", "last") else sys_for_card(sys, card_sys(p, it))   # 没改过的默认提示换成现在这版
+    it["sys"] = sys_for(it, sys) if it["kind"] in STILLS else sys_for_card(sys, card_sys(p, it))   # 没改过的默认提示换成现在这版
     prompt = it["sys"]
     d = folder(p, iid)
     inp = d / "input.png"
     refs = []
     # 局部重绘（接着编辑的图 / 上传的图上画的范围）：这块涂灰 128 交给 Qwen 重绘，其余原样
-    rp = load_repaint(p, it) if it["kind"] in ("first", "last") and it.get("base_upload") else None
-    if it["kind"] in ("first", "last"):
+    rp = load_repaint(p, it) if it["kind"] in STILLS and it.get("base_upload") else None
+    if it["kind"] in STILLS:
         if use_bg is not None:
             it["use_bg"] = bool(use_bg)
         bg = PANO.to_frame(p, it["frame"], d, it.get("bg_choice")) if it.get("use_bg", True) and rp is None else None
@@ -48,7 +48,7 @@ def candidates(p, engine, iid, desc, sys, count, log=print, use_bg=None, fill=No
             log(f"{it['label']}：还没有背景全景图，只用合成图")
         prompt = with_bg_sentence(prompt, bool(refs))
     desc_used = it["desc"]
-    if it["kind"] in ("first", "last") and desc_used and desc_used == it.get("desc_vl"):
+    if it["kind"] in STILLS and desc_used and desc_used == it.get("desc_vl"):
         # 照测试做法（2026-10-31 用户定「完全一样」）：Qwen-VL 看原片自动写的描述不加（它写的是移动之前的样子，
         # 1009 cand_14 照着把两人画回挨在一起）。用户自己写 / 改过的描述照常加。
         log(f"{it['label']}：「你的描述」是 Qwen-VL 自动写的，没改过，这次不加进提示词")
@@ -59,7 +59,7 @@ def candidates(p, engine, iid, desc, sys, count, log=print, use_bg=None, fill=No
     desc_used = MN.resolve(desc_used, mentions, keys, fmt, log=log)
     prompt = MN.resolve(prompt, mentions, keys, fmt, log=log)
     prompt = " ".join(x for x in (desc_used, prompt) if x)
-    if it["kind"] in ("first", "last"):
+    if it["kind"] in STILLS:
         if fill in FILLS:
             it["fill"] = fill
         fill = it.get("fill", "grey")
@@ -168,7 +168,7 @@ def candidates(p, engine, iid, desc, sys, count, log=print, use_bg=None, fill=No
         it.setdefault("cand_seed", {})[name] = base_seed + k
         it.setdefault("cand_info", {})[name] = {          # 这张候选是怎么出的（图片结果页显示）
             "time": time.strftime("%Y-%m-%d %H:%M"), "model": getattr(engine, "edit_label", getattr(engine, "qwen_model", "")),
-            "mode": "repaint" if it["kind"] in ("first", "last") and rp is not None else gen_mode(it), "fill": fill, "seed": base_seed + k, "pe": bool(it.get("pe", True)),
+            "mode": "repaint" if it["kind"] in STILLS and rp is not None else gen_mode(it), "fill": fill, "seed": base_seed + k, "pe": bool(it.get("pe", True)),
             "pe_model": getattr(engine, "pe_model", "") if it.get("pe", True) else "",
             "refs": len(refs), "prompt": prompt}
         if it.get("sig"):
@@ -196,7 +196,7 @@ def api_candidates(p, api, iid, prompt, count, log=print, mentions=None):
     inp = d / "api_input.png"
     src.convert("RGB").save(inp)
     refs, keys = [], ["base"]
-    if it["kind"] in ("first", "last") and it.get("use_bg", True) and not it.get("base_upload"):
+    if it["kind"] in STILLS and it.get("use_bg", True) and not it.get("base_upload"):
         bg = PANO.to_frame(p, it["frame"], d, it.get("bg_choice"))
         if bg:
             refs.append(bg)

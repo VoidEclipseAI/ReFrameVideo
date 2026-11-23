@@ -85,7 +85,7 @@
     view.hidden = false;
     document.body.classList.add("seq-on");
     try { localStorage.setItem("vps_pid", "seq:" + sid); } catch {}
-    await load(sid);
+    await withBusy(T("正在加载长片段…"), () => load(sid));
     window.uiProjectTabs?.showSeq(sid, D.name);
     document.title = `${D.name} · ${T("分段")} · ReFrameVideo`;
   }
@@ -159,7 +159,7 @@
   }
   async function gotoProject(pid) {
     close();
-    try { setProject(await api(`/api/p/${encodeURIComponent(pid)}`)); } catch (e) { setLog(e.message, true); }
+    try { setProject(await withBusy(T("正在加载项目…"), () => api(`/api/p/${encodeURIComponent(pid)}`))); } catch (e) { setLog(e.message, true); }
   }
   window.uiOpenSegment = gotoProject;
 

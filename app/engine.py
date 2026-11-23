@@ -527,6 +527,13 @@ class ComfyEngine:
             lines += ["", "【aligned guide】",
                       f"  加噪的底那段视频（{local(g(5).get('file'))}）整段经 MiniMaxH3AddGuide（frame_idx={g(28).get('frame_idx')}）"
                       "逐帧对齐地作为干净条件行"]
+        guides = [g(80 + j) for j in range(9) if str(80 + j) in graph]
+        if guides:
+            lines += ["", "【关键帧钉帧】"]
+            for x in guides:
+                k = int(x["image"][0]) - 30
+                lines.append(f"  <Picture {k + 1}>" + (f"（{labels[k]}）" if k < len(labels) and labels[k] else "")
+                             + f" 经 MiniMaxH3AddGuide 钉在第 {x['frame_idx']} 帧")
         if extra:
             lines += ["", "【其他】"] + [f"  {x}" for x in extra]
         lines += ["", "【提示词】", r2v.get("prompt", ""), "", f"完整工作流：{Path(work).resolve() / 'comfy_graph.json'}"]
@@ -1460,12 +1467,15 @@ class ComfyEngine:
             self._need_partial()
         if len(p.refs) > 9:
             log(f"  注意：H3 最多收 9 张参考图，后面 {len(p.refs) - 9} 张没发（提示词里的对应 Picture 编号会落空）")
+        for k, frame in getattr(p, "pins", []):
+            if k >= 9:
+                log(f"  注意：钉在第 {frame} 帧的关键帧是第 {k + 1} 张参考图，超过 9 张没发，这次没钉上")
         refs = [self._upload(Path(r)) for r in p.refs[:9]]
         vids = [self._upload(Path(v)) for v in list(ref_videos)[:3]]
         graph, out_node = self.build_h3_graph(self._upload(work / "h3_input.mp4"), self._upload(mpath), p.prompt,
                                               F, info["fps"], p.seed, refs, ref_video_names=vids,
                                               partial_name=self._upload(info["partial"]) if part is not None else None,
-                                              partial_strength=part[1] if part is not None else 0.0)
+                                              partial_strength=part[1] if part is not None else 0.0, pins=getattr(p, "pins", ()))
         (work / "comfy_graph.json").write_text(json.dumps(graph, ensure_ascii=False, indent=1), encoding="utf-8")
         self.write_inputs_used(work, graph, p, [f"重绘区像素数 {counts}",
                                                 f"原片 {n} 帧 → 补到 {F} 帧，{info['fps']} fps"]
@@ -1522,7 +1532,7 @@ class ComfyEngine:
         graph, out_node = self.build_h3_graph(self._upload(work2 / "h3_input.mp4"), self._upload(mpath), p.prompt,
                                               F, fps, p.seed, refs, ref_video_names=vids, denoise=d,
                                               partial_name=self._upload(ppath) if ppath else None,
-                                              partial_strength=part[1] if ppath else 0.0)
+                                              partial_strength=part[1] if ppath else 0.0, pins=getattr(p, "pins", ()))
         (work2 / "comfy_graph.json").write_text(json.dumps(graph, ensure_ascii=False, indent=1), encoding="utf-8")
         self.write_inputs_used(work2, graph, p, [f"二次采样：一采 {W1}x{H1} → 二采 {W2}x{H2}，denoise {d}",
                                                  f"二采的底：重绘区 = 一采结果放大（{first.name}），其余 = 合成输入的高清像素"])
@@ -1620,10 +1630,11 @@ class ComfyEngine:
     H3_MASK_NODE = "ReframeH3InpaintMask"   # 节点包 ComfyUI-Reframe（本仓库 comfyui/ComfyUI-Reframe，V3 写法，无第三方依赖）
 
     def build_h3_graph(self, video_name, mask_name, prompt, F, fps, seed, ref_names=(), ref_video_names=(), steps=None, check_nodes=True,
-                       denoise=1.0, partial_name=None, partial_strength=0.0):
+                       denoise=1.0, partial_name=None, partial_strength=0.0, pins=()):
         """合成用的 H3 工作流：像素 mask → ReframeH3InpaintMask（按 H3 的 32px 格 / 时间组换算潜空间 mask，
         直接带在 latent 上）→ 采样 → 解码。画布 = h3_input.mp4 整幅。音频那一半取 ReferenceToVideo 的空音频。
         LoRA / 主模型照「视频生成」栏的设置（_apply_loras / self.unet）。
+        pins = [(参考图下标, 帧号)]：关键帧钉帧，那张参考图（节点 30 + 下标）再用 MiniMaxH3AddGuide 钉在这一帧（节点 80 起，串在 BasicGuider 前）。
         2026-11-08 起改用 ReframeH3InpaintMask：47bd/028 同输入同 seed 成片逐像素一样。"""
         g = {}
 
@@ -1661,9 +1672,13 @@ class ComfyEngine:
         cond = node(12, "MiniMaxH3ReferenceToVideo", **r2v)
         av = node(14, "LTXVConcatAVLatent", video_latent=[masked, 0],
                   audio_latent=[node(13, "LTXVSeparateAVLatent", av_latent=[cond, 1]), 1])
+        guided = [cond, 0]
+        for j, (k, frame) in enumerate(p for p in pins if 0 <= p[0] < len(ref_names)):   # 关键帧钉帧：keyframe 条件行的时间 = 目标第 frame 帧
+            guided = [node(80 + j, "MiniMaxH3AddGuide", positive=guided, vae=[vae, 0], latent=[av, 0],
+                           image=[str(30 + k), 0], frame_idx=int(frame)), 0]
         out = node(19, "SamplerCustomAdvanced",
                    noise=[node(15, "RandomNoise", noise_seed=seed), 0],
-                   guider=[node(16, "BasicGuider", model=[unet, 0], conditioning=[cond, 0]), 0],
+                   guider=[node(16, "BasicGuider", model=[unet, 0], conditioning=guided), 0],
                    sampler=[node(17, "KSamplerSelect", sampler_name="res_multistep"), 0],
                    sigmas=[node(18, "BasicScheduler", model=[unet, 0], scheduler="simple", steps=steps or self.H3_STEPS,
                                        denoise=1 if denoise >= 1 else float(denoise)), 0],

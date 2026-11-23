@@ -128,7 +128,8 @@ def build(project, engine, work, zones, ends, has_bg, cards, keep, scene, log, c
     from engine import check_cancel
     from refprompt import describe_cached
     from regions import EMPTY
-    refs = dict(first=any(k=='first' for k,_,_ in ends), last=any(k=='last' for k,_,_ in ends), bg=has_bg, cards=cards)
+    refs = dict(first=any(k=='first' for k,_,_ in ends), last=any(k=='last' for k,_,_ in ends), bg=has_bg, cards=cards,
+                keys=key_secs(project, ends))
     holes, answers = [], []
     camera = CAM_FALLBACK
     log('  提示词方案：补瑕疵 v4（空区按图层分块，每块对照粗剪和选用的参考帧问一次）')
@@ -136,7 +137,7 @@ def build(project, engine, work, zones, ends, has_bg, cards, keep, scene, log, c
         engine = vl_engine(engine, vl_model)
         if isinstance(engine, _VL):
             log(f"  空区分析模型：{engine.name}")
-        kind, key, i = ends[0]                           # 首帧优先（对第 0 帧），只有尾帧时对最后一帧
+        kind, key, i = ends[0]                           # 首帧优先（对第 0 帧），再尾帧（最后一帧），只有关键帧时对它那一帧
         ref = np.array(Image.open(key).convert('RGB'))
         rough = composite[i].copy()
         rough[zones[i] == EMPTY] = 128
@@ -182,9 +183,14 @@ def build(project, engine, work, zones, ends, has_bg, cards, keep, scene, log, c
     return prompt
 
 
-def system_prompt(project, first, last, has_bg, cards, vid=None, relight=False):
-    """生成前展示补瑕疵六段模板；逐块 Qwen-VL 描述在生成时加入。"""
-    refs = dict(first=first, last=last, bg=has_bg, cards=cards)
+def key_secs(project, ends):
+    """关键帧在第几秒（ends 里 kind = "key" 的帧号 / fps），按传的顺序。"""
+    return [i / project.data["fps"] for k, _, i in ends if k == "key"]
+
+
+def system_prompt(project, first, last, has_bg, cards, vid=None, relight=False, keys=()):
+    """生成前展示补瑕疵六段模板；逐块 Qwen-VL 描述在生成时加入。keys = 关键帧的秒数（按传的顺序）。"""
+    refs = dict(first=first, last=last, bg=has_bg, cards=cards, keys=list(keys))
     data = dict(project.data, current=vid) if vid is not None else project.data
     return _pf().fill_prompt(data, refs, [], camera=CAM_FALLBACK, relight=relight), refs
 
@@ -209,7 +215,7 @@ def merge_user(prompt, user):
 def build_train(project, work, ends, has_bg, cards, user, log, vid=None, system=None):
     """生成视频的提示词 = 系统提示词（system 给了就用用户改过的，否则 system_prompt 默认）+ 用户提示词（merge_user）。"""
     first, last = any(k == "first" for k, _, _ in ends), any(k == "last" for k, _, _ in ends)
-    default, info = system_prompt(project, first, last, has_bg, cards, vid)
+    default, info = system_prompt(project, first, last, has_bg, cards, vid, keys=key_secs(project, ends))
     custom = bool((system or "").strip())
     prompt = merge_user(system.strip() if custom else default, user)
     log("  提示词方案：" + ("用户改过的系统提示词" if custom else "训练句子（prompt_format.build_prompt，和 LoRA 训练同一套；不问 Qwen-VL）")

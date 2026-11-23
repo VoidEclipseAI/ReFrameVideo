@@ -372,3 +372,19 @@ addEventListener("keyup", (e) => {
 });
 addEventListener("blur", () => { S.space = false; $("#stage").classList.remove("grab"); });
 
+
+// 时间轴「切出选区」：蓝色选区以外的帧去掉，另存成新项目并打开（原项目不动，当前版本的图层、蒙版、画幅都带过去）
+$("#trimBtn").onclick = async () => {
+  if (!S.d) return;
+  const a = Math.min(S.start, S.end), b = Math.max(S.start, S.end);
+  if (a === 0 && b === S.d.n - 1) return setLog(T("先拖时间轴上蓝色选区的两头，选出要留下的部分"), true);
+  const k = b - a + 1, sec = (k / S.d.fps).toFixed(2);
+  const msg = uiLanguage === "en"
+    ? `Keep only frames ${a}–${b} (${k} frames, ${sec} s) and save them as a new project? The current project stays as it is; layers, masks and the frame come along.`
+    : `只留第 ${a}–${b} 帧（${k} 帧，${sec} 秒），另存成新项目并打开？原项目不动；图层、蒙版、画幅都带过去。`;
+  if (!(await uiConfirm(msg, { ok: T("切出选区") }))) return;
+  try {
+    await api(`/api/p/${S.pid}/trim`, { json: { start: a, end: b } });
+    await watchJob();
+  } catch (e) { setLog(e.message, true); }
+};

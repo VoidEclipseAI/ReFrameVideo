@@ -10,22 +10,24 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from images import KINDS, card_source, open_upload, edit_sig, find, folder, get, items, layer_sig
+from images import KINDS, STILLS, still_index, card_source, open_upload, edit_sig, find, folder, get, items, layer_sig
 from project import obj_word
 from regions import EMPTY, MASK_OPTS, compose_still, frame_one, frame_rect, to_frame
 import panorama as PANO
 from refprompt import OBJECT_PROMPT, PERSON_PROMPT, PERSON_WORDS, gen_mode, sys_default, sys_for
 
 
-def create(p, kind, oid=None, log=print):
-    """新建一个图片标签（同一种只能有一个，资料卡每个物体一个）。返回标签。"""
+def create(p, kind, oid=None, log=print, frame=None):
+    """新建一个图片标签（同一种只能有一个，资料卡每个物体一个；关键帧可以多张，frame = 视频第几帧）。返回标签。"""
     if kind not in KINDS:
         raise ValueError(f"未知的图片类型 {kind}")
-    old = find(p, kind, oid)
+    old = None if kind == "key" else find(p, kind, oid)
     if old:
         return old
     it = dict(id=("bg" if kind == "bg" else uuid.uuid4().hex[:8]), kind=kind, label=KINDS[kind], cands=[], pick=None)
-    if kind in ("first", "last") and p.bgswap_on():       # 有「替换背景」图层：默认不带旧背景图
+    if kind == "key":
+        it["frame"] = min(max(int(frame or 0), 0), p.data["n"] - 1)
+    if kind in STILLS and p.bgswap_on():       # 有「替换背景」图层：默认不带旧背景图
         it["use_bg"] = False
     if kind != "bg":                                      # 标签属于哪个版本，建的时候就记下（新结构里文件夹按它放，取画面前就要知道）
         it["version"] = p.data["current"]
@@ -89,7 +91,7 @@ def base_key(p, it):
 def still(p, it, log=print):
     """首帧 / 尾帧这一帧现在的样子（不写文件）：视频编辑停在这一帧，图层摆放跟视频，蒙版 / 空区 / 重绘区字段用这张图的单图覆盖。
     返回 dict(comp：画面，空区已涂灰 128；zones；people：画面里的人；hole：空区；occ：整块遮挡物；i；rect)。"""
-    i = 0 if it["kind"] == "first" else p.data["n"] - 1
+    i = still_index(p, it)
     rect = frame_rect(p)
     H, W = p.data["h"], p.data["w"]
     framed = rect != [0, 0, W, H]
@@ -130,6 +132,14 @@ def still(p, it, log=print):
     return dict(comp=comp, zones=z, people=people, hole=hole, occ=occ, i=i, rect=rect, who=who, names=names)
 
 
+def set_key_frame(p, it, frame, log=print):
+    """关键帧改帧号：重新取画面（候选清空、文件留着；旧候选是另一帧的画面，签名里没有帧号，不清会被当成没过期）。"""
+    if it["kind"] != "key":
+        raise ValueError("只有关键帧能改帧号")
+    it["frame"] = min(max(int(frame), 0), p.data["n"] - 1)
+    return take_base(p, it, log)
+
+
 def card_sys(p, it):
     """资料卡的默认基础提示：人用人物资料卡那句，物体用物体那句（带物体名）。"""
     try:
@@ -149,7 +159,7 @@ def take_base(p, it, log=print, keep=False):
         it.pop("base_upload", None)                      # 改回从视频取的画面
         it.pop("base_from", None)
         drop_repaint(p, it)                              # 换了画面：局部重绘范围作废
-    if it["kind"] in ("first", "last"):
+    if it["kind"] in STILLS:
         st = still(p, it, log)
         reset()
         comp, hole, i = st["comp"], st["hole"], st["i"]
@@ -183,7 +193,7 @@ def take_base(p, it, log=print, keep=False):
 
 def ensure_base(p, it, log=print):
     """首帧 / 尾帧出候选前：画面和现在的编辑对不上（或还没取过）就自动重取（不清候选）。"""
-    if it["kind"] not in ("first", "last") or it.get("base_upload"):   # 上传的画面：不按视频重取
+    if it["kind"] not in STILLS or it.get("base_upload"):   # 上传的画面：不按视频重取
         return
     zf = folder(p, it["id"]) / "zones.npz"
     if it.get("base_key") == base_key(p, it) and zf.exists():
@@ -340,13 +350,13 @@ def upload_base(p, it, data, log=print):
     it.pop("base_from", None)                            # 上传的图（「用这张继续编辑」会在外面再记上是哪张候选）
     drop_repaint(p, it)                                  # 换了画面：局部重绘范围作废
     d = folder(p, it["id"])
-    if it["kind"] in ("first", "last"):
+    if it["kind"] in STILLS:
         rect = frame_rect(p)
         if img.shape[:2] != (rect[3], rect[2]):
             img = cv2.resize(img, (rect[2], rect[3]), interpolation=cv2.INTER_AREA)
         z = np.zeros(img.shape[:2], bool)
         np.savez_compressed(d / "zones.npz", zones=z.astype(np.uint8), people=z, hole=z, occ=z)
-        it.update(frame=0 if it["kind"] == "first" else p.data["n"] - 1, version=it.get("version") or p.data["current"], sig=layer_sig(p), rect=rect)
+        it.update(frame=still_index(p, it), version=it.get("version") or p.data["current"], sig=layer_sig(p), rect=rect)
         it["base_upload"] = True
         it["sys"] = sys_for(it, it.get("sys", ""))   # 没改过的默认提示换成「上传的画面」那份
     Image.fromarray(np.dstack([img, np.full(img.shape[:2], 255, np.uint8)])).save(d / "base.png", compress_level=1)

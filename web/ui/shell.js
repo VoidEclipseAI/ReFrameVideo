@@ -18,7 +18,7 @@
   const noLayers = () => {
     if (document.body.dataset.tab !== "card" || typeof curImg !== "function") return false;
     const it = curImg();
-    return !!it && (it.kind === "first" || it.kind === "last") && !!it.base_upload;
+    return !!it && isStill(it) && !!it.base_upload;
   };
   const NO_LAYER_GROUPS = ["layers", "mask", "transform", "frame"];
   const groupLocked = (g) => (resultsMode() && g !== "gen" && g !== "export") || (noLayers() && NO_LAYER_GROUPS.includes(g));   // 导出在结果页也能用

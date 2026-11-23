@@ -307,8 +307,13 @@ def fill_prompt(p, refs, holes, camera=None, replaced=(), relight=False):
     写进 summary 和 detailed_description（和 EDIT["harmonize"] 同一句）。"""
     f = facts(p, replaced)
     pics, k = {}, 0
-    for role, on in (("first", refs.get("first")), ("last", refs.get("last")), ("bg", refs.get("bg"))):
-        if on:
+    kfs = []                                             # 关键帧（视频中间某一帧补好的图，2026-11-22）：[(图号, "2.4 s")]，排在首帧 / 尾帧后面、背景图前面
+    for role, on in (("first", refs.get("first")), ("last", refs.get("last")), ("keys", refs.get("keys")), ("bg", refs.get("bg"))):
+        if role == "keys":
+            for t in on or []:
+                k += 1
+                kfs.append((k, f"{float(t):.1f} s"))
+        elif on:
             k += 1
             pics[role] = k
     cards = []
@@ -317,7 +322,8 @@ def fill_prompt(p, refs, holes, camera=None, replaced=(), relight=False):
         cards.append((oid, k))
     card_of = dict(cards)
     look = f"as shown in <Picture {pics['first']}>" if "first" in pics else \
-        f"as shown in <Picture {pics['last']}>" if "last" in pics else "as shown in <Video 1>"
+        f"as shown in <Picture {pics['last']}>" if "last" in pics else \
+        f"as shown in <Picture {kfs[0][0]}>" if kfs else "as shown in <Video 1>"
 
     subs, defs_s, ret_s = 0, [], []
     keys = [(m["noun"], m["side"]) for m in f["main"]]
@@ -374,12 +380,20 @@ def fill_prompt(p, refs, holes, camera=None, replaced=(), relight=False):
         defs.append(f"<Picture {pics['first']}> is the first frame of [Shot 1], with the grey areas already filled in.")
     if "last" in pics:
         defs.append(f"<Picture {pics['last']}> is the last frame of [Shot 1], with the grey areas already filled in.")
+    for n_, t in kfs:                                   # 训练里任意关键帧的写法（lora_unified prompt_format.build_prompt 的 any 模式）
+        defs.append(f"<Picture {n_}> is the frame of [Shot 1] at {t}, with the grey areas already filled in.")
     defs += defs_s
 
-    tags = ["video editing"] + (["keyframe completion"] if pics.keys() & {"first", "last"} else []) + \
+    tags = ["video editing"] + (["keyframe completion"] if pics.keys() & {"first", "last"} or kfs else []) + \
            (["reference generation"] if env or cards else [])
-    span = ("begins from <Picture %d>" % pics["first"] if "first" in pics else "begins") + \
-           (" and ends on <Picture %d>" % pics["last"] if "last" in pics else "")
+    if kfs:                                              # 有关键帧：「begins from …, passes through <Picture N> at 2.4 s and ends on …」
+        parts = (["begins from <Picture %d>" % pics["first"]] if "first" in pics else []) + \
+                ["passes through <Picture %d> at %s" % kt for kt in kfs] + \
+                (["ends on <Picture %d>" % pics["last"]] if "last" in pics else [])
+        span = ", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else parts[0]
+    else:
+        span = ("begins from <Picture %d>" % pics["first"] if "first" in pics else "begins") + \
+               (" and ends on <Picture %d>" % pics["last"] if "last" in pics else "")
     shot = f"A {camera} of {who}" if camera else f"A shot of {who}"
     only = (f"There {'is' if nm == 1 else 'are'} only {_repair_NUM[nm] if nm < len(_repair_NUM) else nm} {'person' if nm == 1 else 'people'} "
             "in the foreground." if nm else "")
@@ -396,6 +410,8 @@ def fill_prompt(p, refs, holes, camera=None, replaced=(), relight=False):
         ret.append(f"<Picture {pics['first']}> ([Shot 1] first frame): fully_preserved - the shot opens on this frame.")
     if "last" in pics:
         ret.append(f"<Picture {pics['last']}> ([Shot 1] last frame): fully_preserved - the shot ends on this frame.")
+    for n_, t in kfs:
+        ret.append(f"<Picture {n_}> ([Shot 1] at {t}): fully_preserved - the shot shows exactly this frame at {t}.")
     ret += ret_s
 
     frames_ = ("A fixed camera" if camera and ("static" in camera or "fixed" in camera) else "The camera") + \

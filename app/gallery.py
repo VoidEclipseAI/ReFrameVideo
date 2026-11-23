@@ -4,7 +4,7 @@
 图片默认只列选用的那张（每个图片标签一张、背景图一张），all_cands=True 时列出全部候选。
 """
 
-KIND = {"first": "首帧", "last": "尾帧", "card": "资料卡", "bg": "背景图"}
+KIND = {"first": "首帧", "last": "尾帧", "card": "资料卡", "bg": "背景图", "key": "关键帧"}
 
 
 def _mtime(f):

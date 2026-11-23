@@ -222,7 +222,7 @@ $("#genTransAvoid").onchange = saveTrans;
 $("#genTransAvoid").oninput = syncTransUi;
 // ---------- 参考图片（视频生成）：清单式，一行一张（07d-reflist.js）----------
 // 首帧固定第一行（没有时提醒）；尾帧 / 背景图 / 资料卡 / 其他图片按需「+ 添加」。编号 = 传给 H3 的 Picture N，
-// 顺序跟后端一样：首帧、尾帧、背景图、资料卡、其他图片。✕ = 这次不用（文件和图片标签里的选用都不动；其他图片从列表去掉）。
+// 顺序跟后端一样：首帧、尾帧、关键帧（按帧号，只当参考图）、背景图、资料卡、其他图片。✕ = 这次不用（文件和图片标签里的选用都不动；其他图片从列表去掉）。
 function genRefItems() {                                           // 所有可能的参考图：key、用途、来源、缩略图、有没有图
   const tabs = imgTabs(), pn = S.d.panorama || {};
   const items = [];
@@ -231,6 +231,7 @@ function genRefItems() {                                           // 所有可�
     thumb: it && it.pick ? imgUrl(it, it.pick, 240) : "", big: it && it.pick ? imgUrl(it, it.pick, 0) : "" });
   tab("first", T("首帧"), tabs.find((x) => x.kind === "first"));
   tab("last", T("尾帧"), tabs.find((x) => x.kind === "last"));
+  for (const it of keyTabs()) tab("key:" + it.id, imgLabel(it), it);
   const bgUrl = (w) => `/api/p/${S.pid}/panorama/${pn.use || "qwen_full"}.png?v=${pn.v}&w=${w}`;
   items.push({ key: "bg", role: T("背景图"), ok: !!pn.filled, src: T("背景图标签选用的那张"), thumb: pn.filled ? bgUrl(240) : "", big: pn.filled ? bgUrl(0) : "" });
   for (const it of tabs.filter((x) => x.kind === "card")) tab("card:" + it.id, T("人物 · ") + it.label, it);
@@ -323,9 +324,9 @@ async function genRefDrop(key) {                                   // ✕：这�
 const uploadTo = async (key, multiple = false) => { for (const f of await pickImageFile(multiple)) await genRefUpload(key, f); };
 function genChangeMenu(key, anchor) {                              // 「换 ▾」：去图片编辑里挑 / 上传一张
   const [kind, id] = key.split(":");
-  const it = kind === "card" ? imgTabs().find((t) => t.id === id) : imgTabs().find((t) => t.kind === kind);
+  const it = kind === "card" || kind === "key" ? imgTabs().find((t) => t.id === id) : imgTabs().find((t) => t.kind === kind);
   const items = [];
-  if (kind === "first" || kind === "last" || kind === "card")
+  if (kind === "first" || kind === "last" || kind === "card" || (kind === "key" && it))
     items.push({ label: T("去图片编辑里挑 / 生成"), hint: it ? it.label : T("会新建标签"), run: async () => openImgTab(it || await ensureTab(kind)) });
   if (kind === "bg") {
     const bgTab = imgTabs().find((t) => t.kind === "bg");
@@ -371,7 +372,7 @@ function genMentionItems(all) {
     if (!x.ok || (!all && !genUsed(x))) continue;
     const [kind, id] = x.key.split(":");
     if (kind === "card") { const t = tabs.find((t) => t.id === id); if (t && t.oid) rows.push({ name: imgLabel(t), key: "card:" + t.oid, thumb: x.thumb }); }
-    else if (kind === "other") rows.push({ name: x.role, key: x.key, thumb: x.thumb });
+    else if (kind === "other" || kind === "key") rows.push({ name: x.role, key: x.key, thumb: x.thumb });
     else rows.push({ ...mentionName({ first: "首帧", last: "尾帧", bg: "背景图" }[kind]), key: x.key, thumb: x.thumb });
   }
   rows.push({ ...mentionName("粗剪"), key: "video" });
@@ -382,7 +383,9 @@ function genRefPayload() {                                         // 这次会�
   const used = genRefItems().filter(genUsed), on = (k) => used.some((x) => x.key === k);
   const ticked = (pre) => used.filter((x) => x.key.startsWith(pre)).map((x) => x.key.slice(pre.length));
   const cards = ticked("card:").map((iid) => (imgTabs().find((t) => t.id === iid) || {}).oid).filter(Boolean);   // 用上的资料卡 → 图层 id
-  return { anchors: { first: on("first"), last: on("last") }, use_bg: on("bg"), cards, extra_refs: ticked("other:"),   // 其他图片 → gen_refs 的 id
+  const anchors = { first: on("first"), last: on("last") };
+  for (const it of keyTabs()) anchors["key:" + it.id] = on("key:" + it.id);   // 关键帧：勾了的当 <Picture N>（默认不钉帧，generate.KEY_PIN）
+  return { anchors, use_bg: on("bg"), cards, extra_refs: ticked("other:"),   // 其他图片 → gen_refs 的 id
            version: S.d.current };                                 // 排队的话按点击时的版本生成
 }
 
@@ -583,12 +586,12 @@ const BG_SENT = "Picture 2 is the clean, empty background of this exact shot and
   "including the blurry and empty-looking parts, to match Picture 2 exactly. ";
 function sysOf(it) {
   const s = (it.sys || it.prompt || "").split(BG_SENT).join("").trim();
-  if (!(it.kind === "first" || it.kind === "last") || !STILL_DEFAULT) return s;
+  if (!isStill(it) || !STILL_DEFAULT) return s;
   const defs = [...STILL_OLD, ...Object.values(SYS_DEF)];
   return !s || defs.includes(s) ? sysDefault(it) : s;   // 没改过的默认提示（哪个模式的都算）：换成现在这个模式的
 }
 function genModeOf(it) { return it.base_upload ? "upload" : it.mode === "inpaint" ? "inpaint" : "gen"; }   // 默认生成
-function sysDefault(it) { return it.kind === "first" || it.kind === "last" ? SYS_DEF[genModeOf(it)] || STILL_DEFAULT : sysOf(it); }
+function sysDefault(it) { return isStill(it) ? SYS_DEF[genModeOf(it)] || STILL_DEFAULT : sysOf(it); }
 
 // ---------- 启动：所有脚本都加载完以后才跑（原来在额外参考图那一段后面）----------
 (async () => {
@@ -599,7 +602,7 @@ function sysDefault(it) { return it.kind === "first" || it.kind === "last" ? SYS
     return;
   }
   try { S.pw = (await api("/api/preview")).w; } catch {}
-  if ((info.api || 0) < 255) {                                       // 页面是新的、服务端还是旧的：提示重启
+  if ((info.api || 0) < 259) {                                       // 页面是新的、服务端还是旧的：提示重启
     const b = document.createElement("div");
     b.textContent = T("服务端版本过旧，请停止后重新启动 server.py（页面已更新，但服务端还在运行旧代码）");
     b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;background:#c0392b;color:#fff;padding:8px 14px;font-weight:600";

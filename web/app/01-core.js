@@ -18,6 +18,8 @@ const S = {
   cmpSide: false,                                                  // 并排对比：左右各一整个画面，同时播放
 };
 // 「第 a–b 帧」：英文语序不同，词条拼不出来，按语言分开写（插进 T`` 里的值不会再被翻）
+// 首帧 / 尾帧 / 关键帧：视频里某一帧的画面（按图层摆放取），图片编辑里同一套
+const isStill = (it) => !!it && (it.kind === "first" || it.kind === "last" || it.kind === "key");
 const FR = (a, b) => uiLanguage === "en" ? (b === undefined ? `frame ${a}` : `frames ${a}–${b}`) : (b === undefined ? `第 ${a} 帧` : `第 ${a}–${b} 帧`);
 // 后端写进项目的结果名 / 内容是中文（「结果 12」「合成 person 1、空区蒙版」）：英文界面显示时换掉，数据不改
 const resText = (t) => uiLanguage !== "en" ? (t ?? "") : String(t ?? "").replace(/^结果 (\d+)/, "Result $1").replace(/^一采 · /, "Pass 1 · ").replace(/^合成 /, "Composite: ").replace(/^Pass 1 · 合成 /, "Pass 1 · Composite: ")
@@ -57,6 +59,39 @@ function uiAsk(msg, { input = null, ok = T("确定"), no = T("取消"), danger =
   });
 }
 const uiConfirm = (msg, opts) => uiAsk(msg, opts);
+
+// 「正在加载」小窗（2026-11-22 用户要：打开长视频 / 切出选区时界面像死机）：慢操作超过 0.3 秒才弹，显示在做什么 + 已用时间，结束自动关。
+// uiBusy(标题) 开、uiBusy(null) 关；uiBusyNote(当前步骤) 改下面那行；可以嵌套（计数），最后一个关了才收起。
+const BUSY = { n: 0, el: null, timer: 0, tick: 0, t0: 0, title: "", note: "" };
+function busyRender() {
+  if (!BUSY.el) return;
+  BUSY.el.querySelector(".busy-t").textContent = BUSY.title;
+  const sec = Math.round((Date.now() - BUSY.t0) / 1000);
+  BUSY.el.querySelector(".busy-s").textContent = (BUSY.note ? BUSY.note + " · " : "") + (uiLanguage === "en" ? `${sec} s elapsed` : `已用 ${sec} 秒`);
+}
+function uiBusy(title) {
+  if (title == null) {
+    if (BUSY.n > 0 && --BUSY.n > 0) return;
+    clearTimeout(BUSY.timer); clearInterval(BUSY.tick);
+    BUSY.el?.remove(); BUSY.el = null; BUSY.note = "";
+    return;
+  }
+  BUSY.title = title;
+  if (BUSY.n++ > 0) return busyRender();
+  BUSY.t0 = Date.now();
+  BUSY.timer = setTimeout(() => {
+    const d = document.createElement("div");
+    d.className = "ui-dialog busy-dlg";
+    d.setAttribute("role", "alertdialog"); d.setAttribute("aria-busy", "true");
+    d.innerHTML = '<div class="dlg-card"><span class="busy-spin"></span><div><div class="busy-t"></div><div class="busy-s"></div></div></div>';
+    document.body.append(d);
+    BUSY.el = d;
+    busyRender();
+    BUSY.tick = setInterval(busyRender, 1000);
+  }, 300);
+}
+function uiBusyNote(note) { BUSY.note = note || ""; busyRender(); }
+async function withBusy(title, fn) { uiBusy(title); try { return await fn(); } finally { uiBusy(null); } }
 const uiPrompt = (msg, value = "", opts) => uiAsk(msg, { ...opts, input: String(value ?? "") });
 
 const pendingApiWrites = new Set();
@@ -177,6 +212,7 @@ function setProject(d, keep = false) {
     if (S.shape && typeof endShape === "function") endShape();
     if (S.pick && typeof setSegMode === "function") setSegMode("text");
     S.extPending = null;
+    S.vidI = undefined; S.inStill = false;                         // 视频编辑播放头（新建关键帧用）是上个项目 / 版本的
   }
   if (verChanged) { S.undo = []; S.redo = []; }                    // 撤销记录是上个版本的图层：换版本就清掉
   if (first && old && keepProjects() === 2)                         // 切走的项目：帧缓存收起来（只留最近 1 个后台项目）

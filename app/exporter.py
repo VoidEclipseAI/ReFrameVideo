@@ -113,7 +113,8 @@ def ref_names(labels, refs):
     """参考图在 zip 里的名字：picture_<N>_<是什么>.png（N 从 1 开始，和提示词的 <Picture N> 一样）。"""
     out = []
     for k, (lab, f) in enumerate(zip(labels, refs), start=1):
-        tag = REF_TAG.get(lab) or ("card_" + safe(lab.split("：", 1)[-1]) if lab.startswith("资料卡") else "ref")
+        tag = REF_TAG.get(lab) or ("card_" + safe(lab.split("：", 1)[-1]) if lab.startswith("资料卡")
+                                   else "keyframe_" + "".join(c for c in lab if c.isdigit()) if lab.startswith("关键帧") else "ref")
         out.append((f"picture_{k}_{tag}{Path(f).suffix or '.png'}", Path(f)))
     return out
 
@@ -129,7 +130,8 @@ def export_video(p, engine, graph_engine, op, log):
     graph, _ = graph_engine.build_h3_graph("rough_cut.mp4", "mask.mov", ps.prompt, info["F"], info["fps"], ps.seed,
                                            [n for n, _ in refs], ref_video_names=["video1_guide.mp4"], check_nodes=False,
                                            partial_name="partial_mask.mov" if info.get("partial") else None,
-                                           partial_strength=ps.partial[1] if info.get("partial") else 0.0)
+                                           partial_strength=ps.partial[1] if info.get("partial") else 0.0,
+                                           pins=[(k, i) for k, i in ps.pins if k < len(refs)])
     files = [("rough_cut.mp4", work / "h3_input.mp4"), ("mask.mov", mpath), ("video1_guide.mp4", guide), *refs]
     if info.get("partial"):                              # 主体重绘强度 > 0：本体部分重绘的像素 mask
         files.append(("partial_mask.mov", info["partial"]))

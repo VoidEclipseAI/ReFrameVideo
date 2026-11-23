@@ -115,8 +115,16 @@ let watching = null;
 function watchJob() {
   return watching || (watching = watchLoop().catch((e) => { setLog(e.message, true); }).finally(() => { watching = null; $("#stopBtn").hidden = true; }));
 }
+const LOADING_JOB = /^(长片段导入|切出选区|准备第 \d+ 段)$/;   // 这些任务做完会换到别的项目 / 分段页：期间弹「正在加载」小窗
 async function watchLoop() {
-  let tick = 0, handled;
+  let tick = 0, handled, busyOn = false;
+  const busy = (on, j) => {
+    if (on && !busyOn) uiBusy(/^准备第/.test(j.name) ? (uiLanguage === "en" ? j.name.replace(/^准备第 (\d+) 段$/, "Preparing segment $1") : j.name) + "…" : T(j.name) + "…");
+    if (!on && busyOn) uiBusy(null);
+    busyOn = on;
+    if (on) uiBusyNote(uiMsg((j.log || []).slice(-1)[0] || ""));
+  };
+  try {
   const stop = $("#stopBtn");                                      // 任务在跑时顶栏出现「停止」：只停正在跑的，排着的照常接着跑
   const stopLabel = stop.querySelector(".stop-label");
   stop.hidden = false; stop.disabled = false; if (stopLabel) stopLabel.textContent = T("停止");
@@ -133,11 +141,13 @@ async function watchLoop() {
       continue;
     }
     window.taskWindow?.update(j);
+    if (j.busy && LOADING_JOB.test(j.name || "")) busy(true, j);
     if (!seen && j.busy) handled = j.last?.started;              // 开始轮询前就跑完的旧任务，以前收过尾了
     seen = true;
     if (j.last && j.last.started !== handled) {                   // 有任务刚跑完：收尾（刷新项目、打开结果）
       handled = j.last.started;
       await jobFinished(j.last);
+      if (busyOn && !(j.busy && LOADING_JOB.test(j.name || ""))) busy(false);
       if (j.busy) { stop.disabled = false; if (stopLabel) stopLabel.textContent = T("停止"); }   // 下一个排队的接着跑
     }
     if (!j.busy) break;
@@ -150,6 +160,7 @@ async function watchLoop() {
     await new Promise((r) => setTimeout(r, 1000));
   }
   stop.hidden = true;
+  } finally { busy(false); }
 }
 async function jobFinished(last) {
   showProgress({ busy: false, error: last.error, log: last.log || [] });   // 进度条收起，「合成视频」步骤显示最终状态
@@ -163,7 +174,8 @@ async function jobFinished(last) {
   if (window.uiSeqOpen?.()) return;                                // 分段页开着：不去刷新下面藏着的项目
   if (last.open_project && !last.error) {                          // 扩图合成：结果是一个新项目（尺寸变了），直接打开
     await loadProjectList();
-    setLog(T`扩图结果建成了新项目，已打开（原项目还在，项目列表里切回去）`);
+    setLog(last.name === "切出选区" ? T("选区已另存成新项目并打开，图层和画幅也带过来了（原项目不动，在上面的标签里切回去）")
+      : T`扩图结果建成了新项目，已打开（原项目还在，项目列表里切回去）`);
     return setProject(await api(`/api/p/${last.open_project}`));
   }
   if (!S.pid || (last.project && last.project !== S.pid)) return;  // 别的项目的任务：不动现在打开的项目
@@ -343,7 +355,7 @@ $("#openBtn").onclick = async () => {
     const info = await api("/api/probe_video", { json: { path } });   // 先看多长：长视频问要不要分段（ui/sequence.js）
     if (info.duration > info.ask_s && await window.uiAskSplit?.(path, info)) return;
     setLog(T("读取视频、生成预览帧…"));
-    const d = await api("/api/projects", { json: { video_path: path } });
+    const d = await withBusy(T("正在打开视频、生成预览帧…"), () => api("/api/projects", { json: { video_path: path } }));
     setProject(d); $("#openDlg").hidden = true; loadProjectList();
     setLog(d.source_size ? T`已打开：原视频 ${d.source_size[0]}×${d.source_size[1]}，已缩到 ${d.w}×${d.h} 处理（原视频留在项目文件夹；设置 → 性能里可以改）` : T("已打开"));
   }
