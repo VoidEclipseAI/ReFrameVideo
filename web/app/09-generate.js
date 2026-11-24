@@ -199,13 +199,19 @@ function syncTransUi() {
   $("#genTransAvoidVal").textContent = avoidText($("#genTransAvoid").value);
   $("#genFrames").disabled = !$("#genBlue").checked;                // 前后扩展只对移动区域重绘有用
   $("#genFrames").closest(".sub-opt").classList.toggle("off", !$("#genBlue").checked);
+  for (const [c, n] of [["#genEdgeFeather", "#genEdgePx"], ["#genHoleFeather", "#genHolePx"]]) {   // 羽化：关着时宽度变灰
+    $(n).disabled = !$(c).checked;
+    $(n).closest(".sub-opt").classList.toggle("off", !$(c).checked);
+  }
 }
 function saveTrans() {
   syncTransUi();
   const pid = S.pid;
   if (!pid) return;
   const json = { blue: $("#genBlue").checked, frames: +$("#genFrames").value,
-                 grow: +$("#genTransGrow").value, avoid: +$("#genTransAvoid").value };
+                 grow: +$("#genTransGrow").value, avoid: +$("#genTransAvoid").value,
+                 edge_feather: $("#genEdgeFeather").checked, edge_px: Math.min(128, Math.max(1, +$("#genEdgePx").value || 32)),
+                 hole_feather: $("#genHoleFeather").checked, hole_px: Math.min(128, Math.max(1, +$("#genHolePx").value || 32)) };
   transSave = transSave.catch(() => {}).then(async () => {
     const settings = await api(`/api/p/${pid}/trans`, { json });
     if (pid !== S.pid) return;
@@ -220,6 +226,7 @@ $("#genTransGrow").onchange = saveTrans;
 $("#genTransGrow").oninput = syncTransUi;
 $("#genTransAvoid").onchange = saveTrans;
 $("#genTransAvoid").oninput = syncTransUi;
+for (const id of ["#genEdgeFeather", "#genEdgePx", "#genHoleFeather", "#genHolePx"]) $(id).onchange = saveTrans;
 // ---------- 参考图片（视频生成）：清单式，一行一张（07d-reflist.js）----------
 // 首帧固定第一行（没有时提醒）；尾帧 / 背景图 / 资料卡 / 其他图片按需「+ 添加」。编号 = 传给 H3 的 Picture N，
 // 顺序跟后端一样：首帧、尾帧、关键帧（按帧号，只当参考图）、背景图、资料卡、其他图片。✕ = 这次不用（文件和图片标签里的选用都不动；其他图片从列表去掉）。
@@ -250,10 +257,13 @@ function renderGenRefs() {
     const g = (a, b) => (b ? g(b, a % b) : a), d = g(cw, ch), ratio = f.ratio && f.ratio !== "free" && f.ratio !== "orig" ? f.ratio : `${cw / d}:${ch / d}`;
     $("#genRes").textContent = `${cw} × ${ch}`;
     $("#genResSub").textContent = (cw / d > 50 ? (cw / ch).toFixed(2) + ":1" : ratio) + (cw > ch ? T(" · 横") : cw < ch ? T(" · 竖") : ""); }
-  if (![$("#genTransGrow"), $("#genTransAvoid"), $("#genFrames"), $("#genBlue")].includes(document.activeElement)) {   // 外扩 / 主体避让：项目设置，默认 48 / -16
+  if (![$("#genTransGrow"), $("#genTransAvoid"), $("#genFrames"), $("#genBlue"), $("#genEdgeFeather"), $("#genEdgePx"),
+        $("#genHoleFeather"), $("#genHolePx")].includes(document.activeElement)) {   // 外扩 / 主体避让：项目设置，默认 48 / -16
     const t = S.d.trans || {};
     $("#genBlue").checked = !!t.blue; $("#genFrames").value = t.frames ?? ((t.grow ?? 48) > 0 ? 2 : 0);
     $("#genTransGrow").value = t.grow ?? 48; $("#genTransAvoid").value = t.avoid ?? -16;
+    $("#genEdgeFeather").checked = t.edge_feather ?? true; $("#genEdgePx").value = t.edge_px ?? 32;   // 羽化：画框边缘默认开、空洞默认关（generate.feather_opts）
+    $("#genHoleFeather").checked = t.hole_feather ?? false; $("#genHolePx").value = t.hole_px ?? 32;
     syncTransUi();
   }
   let n = 0;
@@ -602,7 +612,7 @@ function sysDefault(it) { return isStill(it) ? SYS_DEF[genModeOf(it)] || STILL_D
     return;
   }
   try { S.pw = (await api("/api/preview")).w; } catch {}
-  if ((info.api || 0) < 259) {                                       // 页面是新的、服务端还是旧的：提示重启
+  if ((info.api || 0) < 263) {                                       // 页面是新的、服务端还是旧的：提示重启
     const b = document.createElement("div");
     b.textContent = T("服务端版本过旧，请停止后重新启动 server.py（页面已更新，但服务端还在运行旧代码）");
     b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;background:#c0392b;color:#fff;padding:8px 14px;font-weight:600";

@@ -315,6 +315,9 @@
         <div class="mctl mrow" data-f="box_redraw" data-focus="2" title="边界框内重绘：这个图层外接框里，除了看得见的图层，全部当空区重绘">
           <label class="mhead chk"><input type="checkbox" id="boxRedraw"> 边界框内重绘</label>
         </div>
+        <div class="mctl mrow rg-video" data-f="face_protect" title="保护脸部：自动识别这个图层里的脸，含脸的那几格生成时不重绘（嘴型、表情照原视频）。只管勾了的图层">
+          <label class="mhead chk"><input type="checkbox" id="faceProtect"> 保护脸部</label>
+        </div>
         <div class="panel-group-title" title="主体移走 / 隐藏后在原位置留下的空区">原位置空区</div>
         <div class="mctl mrow" data-f="hole_rect" data-focus="2" title="空区形状：轮廓 = 照原样；矩形 ×N = 横切 N 段换成矩形（防止补出人形），N 越大越贴身">
           <div class="mhead"><span class="ml">空区形状</span><b id="holeRectVal"></b></div>
@@ -364,6 +367,14 @@
         <div class="mctl mrow rg-video" title="运动范围重绘：动过或隐藏的图层，原位置和新位置外接框里的背景也重绘（不涂灰）">
           <label class="mhead chk"><input type="checkbox" id="genBlue"> 运动范围重绘</label>
           <label class="sub-opt" title="帧扩展：运动范围往前后各扩几帧，让变化平滑（0 = 不扩）">帧扩展 ± <input id="genFrames" type="number" min="0" max="16" step="1" value="0"> 帧</label>
+        </div>
+        <div class="mctl mrow rg-video" title="画幅比原视频大时，扩出去的灰色区域里挨着原视频的一条，用原视频边上的颜色渐变过去，免得成片在交界处出现一条缝">
+          <label class="mhead chk"><input type="checkbox" id="genEdgeFeather" checked> 画框边缘羽化</label>
+          <label class="sub-opt" title="羽化宽度（H3 生成画面的像素）">宽度 <input id="genEdgePx" type="number" min="1" max="128" step="4" value="32"> px</label>
+        </div>
+        <div class="mctl mrow rg-video" title="空洞和人物边上的灰色区域，挨着画面的一条用旁边的颜色渐变过去（试验功能）">
+          <label class="mhead chk"><input type="checkbox" id="genHoleFeather"> 空洞 / 人物边羽化</label>
+          <label class="sub-opt" title="羽化宽度（H3 生成画面的像素）">宽度 <input id="genHolePx" type="number" min="1" max="128" step="4" value="32"> px</label>
         </div>
         <div class="panel-group-title rg-mask" id="rgMaskTitle" title="只影响这张图片，默认都是 0">填补范围（仅此图）</div>
         <div class="mctl mrow rg-mask" data-focus="2" title="闭合：这张图所有空的地方做闭运算连成整块，减少照着画出人影">
@@ -536,8 +547,7 @@
             <label id="genPass2ResWrap" title="二采的分辨率（按画幅比例放进去）；不比一采大时跳过二采">二采分辨率 <select id="genPass2Res"></select></label>
             <label id="genPass2DnWrap" title="二采时重绘区加多少噪声：小 = 基本保持一采只修细节，大 = 改得更多">去噪强度 <input id="genPass2Dn" type="number" min="0.1" max="0.9" step="0.05" value="0.5"></label>
             <label title="移动 / 缩放过的人和物（本体）默认原样保留、不重绘，容易像贴上去的。调高 = 让 H3 轻轻重画本体，光线和颜色融进场景；越高改得越多（脸、衣服细节也可能变）。0 = 不重绘。保护蒙版画过的地方基本不受影响">主体重绘强度 <input id="genBodyRedraw" type="number" min="0" max="1" step="0.05" value="0"></label>
-            <label class="chk" title="生成完按没重绘的地方（保留区）算出整条的偏色，把成片的颜色和亮度校回原视频"><input type="checkbox" id="genColorFix" checked> 颜色校正（对齐原视频）</label>
-          </div>
+            <label class="chk" title="生成完按没重绘的地方（保留区）算出整条的偏色，把成片的颜色和亮度校回原视频"><input type="checkbox" id="genColorFix" checked> 颜色校正（对齐原视频）</label>          </div>
           <div class="dock-col lora-col">
             <div class="dock-title">LoRA <button id="loraAdd" class="ghostbtn" data-icon="plus" title="添加 LoRA" aria-label="添加 LoRA"></button></div>
             <div id="loraRows"></div>

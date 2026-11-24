@@ -19,7 +19,7 @@ import panorama as PANO
 import mentions as MN
 import roughcut
 from engine import h3_canvas
-from regions import explicit_mask, BODY, TRANS_T, disk, keepout, redrawn, temporal_grow, trans_opts
+from regions import explicit_mask, BODY, EMPTY, TRANS_T, disk, keepout, redrawn, temporal_grow, trans_opts
 
 # 关键帧钉帧（MiniMaxH3AddGuide）：默认关（2026-11-23 用户定）。5 个案例里钉帧只让那一帧略近一点，
 # 还可能在钉住的那一帧附近跳一下（53b7、2dd6）；关键帧只当 <Picture N> + 提示词写秒数。
@@ -37,6 +37,8 @@ class Pass:
     ref_labels: list = field(default_factory=list)   # 每张参考图是什么（首帧 / 尾帧 / 背景图 / 资料卡…），写进 inputused.txt
     audio: object = None                 # 原片（取音轨），和粗剪一起编码，声音不重绘
     partial: object = None               # 主体重绘强度：(像素 (n,h,w) bool, 强度 0~1)；None = 本体不重绘（默认）
+    protect: object = None               # 保护脸部：像素 (n,h,w) bool，含这些像素的 H3 格子整格不重绘；None = 不保护
+    hole: object = None                  # 保护脸部时一起传：空区像素 (n,h,w) bool，含空区的格子不保护（节点 hole_mask）
     seed: int = field(default_factory=lambda: random.randint(0, 2**31 - 1))
     pins: list = field(default_factory=list)     # 关键帧钉帧：[(参考图下标, 视频帧号)]，同一张图既是 <Picture N> 又钉在这一帧（MiniMaxH3AddGuide）
 
@@ -101,6 +103,129 @@ def prefill(project, c, comp, zones, rect, log):
     tot = max(int((zones == EMPTY).sum()), 1)
     log(f"  背景预填（{'、'.join([o['name'] for o in objs] + [o['name'] + ' 原位置' for o in hp])}）：空区里 {keep.sum() / tot * 100:.0f}% 用背景图填，其余照旧涂灰")
     return keep if keep.any() else None
+
+
+EDGE_FEATHER = 32      # 羽化宽度默认值：H3 画布像素（一格）
+EDGE_SAMPLE = 3        # 取色点离原视频边几像素（最边上那行常被编码压暗）
+EDGE_COVER = 2         # 原视频最外这几像素（不是本体 / 空区的）也换成取到的颜色：盖掉压暗的边行
+
+
+def feather_opts(project):
+    """项目设置（蒙版面板「边界融合（全局）」，存在 trans 里）：(画框边缘羽化宽度, 空洞 / 人物边羽化宽度)，0 = 关。
+    画框边缘默认开、空洞 / 人物边默认关（2026-11-23 用户定），宽度默认 EDGE_FEATHER。"""
+    t = project.data.get("trans") or {}
+    edge = int(t.get("edge_px", EDGE_FEATHER)) if t.get("edge_feather", True) else 0
+    hole = int(t.get("hole_px", EDGE_FEATHER)) if t.get("hole_feather", False) else 0
+    return edge, hole
+
+
+def edge_feather(project, comp, zones, rect, log, keep=None, px=EDGE_FEATHER):
+    """画框边缘羽化（默认开；2026-11-23，130c 扩画幅那条横缝）：画框外的灰带里挨着原视频的
+    px 像素（H3 画布），改成原视频边上的颜色往外拉、线性渐变到灰 128。只动画框外、本来就是空区（灰）、
+    没被背景预填的像素，移出原片的人（本体）不动；仍然重绘（mask 不变）。改 comp（原地），返回羽化过的像素
+    （n×H×W bool，给 <Video 1> 别再涂回灰），画框没超出原视频时返回 None。"""
+    from regions import EMPTY
+    n, H, W = zones.shape
+    x0, y0 = -rect[0], -rect[1]                          # 原视频在画框里的位置（半开区间）
+    x1, y1 = x0 + project.data["w"], y0 + project.data["h"]
+    cr = project.crop_rows()
+    if cr:                                               # 裁切黑边：黑边那几行也算原视频外
+        y0, y1 = max(y0, y0 + cr[0]), min(y1, y0 + cr[1])
+    x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, W), min(y1, H)
+    if x1 - x0 < 4 * EDGE_SAMPLE or y1 - y0 < 4 * EDGE_SAMPLE or (x0, y0, x1, y1) == (0, 0, W, H):
+        return None
+    d = px * H / h3_canvas(W, H)[1]                      # H3 画布像素 → 画框像素
+    ys, xs = np.mgrid[0:H, 0:W]
+    dx = np.maximum(np.maximum(x0 - xs, xs - (x1 - 1)), 0)
+    dy = np.maximum(np.maximum(y0 - ys, ys - (y1 - 1)), 0)
+    dist = np.sqrt(dx * dx + dy * dy)
+    out_band = (dist > 0) & (dist <= d)
+    inner = np.zeros((H, W), bool)                       # 原视频最外 EDGE_COVER 像素，只在挨着画框外的那几条边
+    if y0 > 0: inner[y0:y0 + EDGE_COVER, x0:x1] = True
+    if y1 < H: inner[y1 - EDGE_COVER:y1, x0:x1] = True
+    if x0 > 0: inner[y0:y1, x0:x0 + EDGE_COVER] = True
+    if x1 < W: inner[y0:y1, x1 - EDGE_COVER:x1] = True
+    w = np.where(inner, 1.0, np.clip(1 - dist / (d + 1), 0, 1)).astype(np.float32)[..., None]
+    sy = np.clip(ys, y0 + EDGE_SAMPLE, y1 - 1 - EDGE_SAMPLE) - y0   # 每个像素取色的点（原视频里、离边 EDGE_SAMPLE）
+    sx = np.clip(xs, x0 + EDGE_SAMPLE, x1 - 1 - EDGE_SAMPLE) - x0
+    done = np.zeros((n, H, W), bool)
+    for i in range(n):
+        z = zones[i]
+        m = (out_band & (z == EMPTY)) | (inner & (z != EMPTY) & (z != BODY))
+        if keep is not None:
+            m &= ~keep[i]
+        if not m.any():
+            continue
+        c = cv2.blur(comp[i][y0:y1, x0:x1], (15, 15), borderType=cv2.BORDER_REPLICATE)[sy, sx].astype(np.float32)
+        v = np.clip(128 + w * (c - 128), 0, 255).astype(np.uint8)
+        comp[i][m] = v[m]
+        done[i] = m
+    if not done.any():
+        return None
+    log(f"  画框边缘羽化：画框外挨着原视频的 {d:.0f} 像素（H3 画布 {px}）用边上的颜色渐变到灰")
+    return done
+
+
+def hole_feather(comp, zones, log, keep=None, px=EDGE_FEATHER):
+    """空洞 / 人物边羽化（默认关；2026-11-23 试验 promo2 人边的描边没了）：空区里还是灰的像素（没被背景预填 /
+    画框边缘羽化过），离最近的非空区像素（背景、人都算）px 像素（H3 画布）以内的，改成那个像素附近的颜色
+    （只在画面里 9×9 模糊，不混进灰）线性渐变到灰 128。仍然重绘（mask 不变）。改 comp（原地），返回羽化过的像素。"""
+    from regions import EMPTY
+    n, H, W = zones.shape
+    d = px * H / h3_canvas(W, H)[1]
+    done = np.zeros((n, H, W), bool)
+    for i in range(n):
+        empty = zones[i] == EMPTY
+        grey = empty if keep is None else empty & ~keep[i]
+        src = ~empty
+        if not grey.any() or not src.any():
+            continue
+        dist, lab = cv2.distanceTransformWithLabels(empty.astype(np.uint8), cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
+        m = grey & (dist <= d)
+        if not m.any():
+            continue
+        ys, xs = np.nonzero(src)                         # 标签 k（从 1 起）= 第 k 个非空区像素（按行扫描）
+        s = src.astype(np.float32)
+        blur = cv2.blur(comp[i].astype(np.float32) * s[..., None], (9, 9)) / np.maximum(cv2.blur(s, (9, 9)), 1e-3)[..., None]
+        c = blur[ys, xs][lab[m] - 1]
+        w = (1 - dist[m] / (d + 1))[:, None]
+        comp[i][m] = np.clip(128 + w * (c - 128), 0, 255).astype(np.uint8)
+        done[i] = m
+    if not done.any():
+        return None
+    log(f"  空洞 / 人物边羽化：空区里挨着画面的 {d:.0f} 像素（H3 画布 {px}）用旁边的颜色渐变到灰")
+    return done
+
+
+def face_protect(project, c, zones, rect, log):
+    """保护脸部（图层勾了 face_protect、识别过 face_mask；只管看得见的图层，背景里的人不管）：脸的像素按图层变换摆到画框里，
+    只留本体（BODY）。交给 ReframeH3InpaintMask 的 protect_mask + conflict=protect：含脸的 H3 格子整格不重绘，
+    嘴就是原视频的。和 zones 同大小，没有要保护的脸返回 None。"""
+    L = c.get("layout")
+    shown = getattr(L, "shown", []) or []
+    for o in shown:
+        if o.get("face_protect") and not o.get("face_mask"):
+            log(f"  {o['name']}：勾了保护脸部但还没识别脸，这次没保护（在图层的「保护脸部」重新勾一次）")
+    objs = [o for o in shown if o.get("face_protect") and o.get("face_mask")]
+    if not objs:
+        return None
+    n, H, W = zones.shape
+    Tm = np.array([[1, 0, -rect[0]], [0, 1, -rect[1]], [0, 0, 1]], np.float64)
+    out = np.zeros((n, H, W), bool)
+    for o in objs:
+        face = project.raw_masks_by_id(o["face_mask"])
+        M = np.eye(3)
+        M[:2] = project.layer_matrix(o)
+        A = (Tm @ M)[:2].astype(np.float32)
+        for i in range(min(n, len(face))):
+            f = face[i] & L.core_i(o["id"], i)
+            if f.any():
+                out[i] |= cv2.warpAffine(f.astype(np.uint8), A, (W, H), flags=cv2.INTER_NEAREST) > 0
+    out &= zones == BODY
+    if not out.any():
+        return None
+    log(f"  保护脸部（{'、'.join(o['name'] for o in objs)}）：{int(out.any(axis=(1, 2)).sum())} 帧有脸，含脸的 H3 格子不重绘")
+    return out
 
 
 def partial_body(c, zones, rect):
@@ -344,6 +469,15 @@ def prepare_compose(project, engine, op, log, build_prompt=True, mention_fmt=Non
     else:
         prompt = user_prompt.strip()
     keep = prefill(project, c, comp, zones, rect, log)   # 背景预填图层：范围里的空区改用背景图
+    edge_px, hole_px = feather_opts(project)             # 羽化（蒙版面板「边界融合（全局）」，项目设置）
+    if edge_px:
+        fe = edge_feather(project, comp, zones, rect, log, keep, edge_px)
+        if fe is not None:
+            keep = fe if keep is None else keep | fe
+    if hole_px:
+        fe = hole_feather(comp, zones, log, keep, hole_px)
+        if fe is not None:
+            keep = fe if keep is None else keep | fe
     write_video(work / "composite.mp4", comp, project.data["fps"])
     Image.fromarray(comp[0]).save(work / "frame_first.png")
     guide = roughcut.guide_video(comp, zones, work, project.data["fps"], keep)
@@ -370,7 +504,13 @@ def prepare_compose(project, engine, op, log, build_prompt=True, mention_fmt=Non
         if part.any():
             p.partial = (part, strength)
             log(f"  主体重绘强度 {strength:.2f}：本体（保护蒙版除外）轻度重绘，占画面 {part.mean() * 100:.1f}%")
-    p2 = op.get("pass2")                                 # 二次采样（视频生成面板「二次采样（高清）」，默认关）：engine.second_pass
+    face = face_protect(project, c, zones, rect, log)    # 保护脸部：含脸的 H3 格子整格不重绘（engine 传 protect_mask）
+    if face is not None:
+        p.protect = face
+        p.hole = zones == EMPTY                          # 含空区（灰）的格子不保护，免得把灰一起留下
+        if p.partial:                                    # 脸也不做主体重绘强度
+            p.partial = (p.partial[0] & ~face, p.partial[1])
+    p2 = op.get("pass2")                                # 二次采样（视频生成面板「二次采样（高清）」，默认关）：engine.second_pass
     if isinstance(p2, dict) and p2.get("on"):
         from engine import H3_PRESETS
         pre = str(p2.get("preset") or "1080")

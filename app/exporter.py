@@ -51,6 +51,8 @@ README_VIDEO = """视频生成素材（ReFrameVideo 导出）
   mask.mov           重绘遮罩（白 = 重画），png 编码无损；不要转成 mp4（h264 会把 255 变成 254）
   video1_guide.mp4   <Video 1> 参考视频（粗剪缩到 768 宽，空处涂灰）
   partial_mask.mov   （只有开了「主体重绘强度」才有）本体部分重绘的地方，强度写在 ReframeH3InpaintMask 节点里
+  protect_mask.mov   （只有图层勾了「保护脸部」才有）脸的像素，含脸的格子整格不重绘（节点 conflict = protect）
+  hole_mask.mov      （和 protect_mask 一起）空区像素，含空区的格子不保护
   picture_N_*.png    参考图，N 就是提示词里的 <Picture N>
   prompt.txt         提示词
   workflow_api.json  ComfyUI 工作流（API 格式），里面的文件名已经填好
@@ -131,10 +133,16 @@ def export_video(p, engine, graph_engine, op, log):
                                            [n for n, _ in refs], ref_video_names=["video1_guide.mp4"], check_nodes=False,
                                            partial_name="partial_mask.mov" if info.get("partial") else None,
                                            partial_strength=ps.partial[1] if info.get("partial") else 0.0,
-                                           pins=[(k, i) for k, i in ps.pins if k < len(refs)])
+                                           pins=[(k, i) for k, i in ps.pins if k < len(refs)],
+                                           protect_name="protect_mask.mov" if info.get("protect") else None,
+                                           hole_name="hole_mask.mov" if info.get("hole") else None)
     files = [("rough_cut.mp4", work / "h3_input.mp4"), ("mask.mov", mpath), ("video1_guide.mp4", guide), *refs]
     if info.get("partial"):                              # 主体重绘强度 > 0：本体部分重绘的像素 mask
         files.append(("partial_mask.mov", info["partial"]))
+    if info.get("protect"):                              # 保护脸部
+        files.append(("protect_mask.mov", info["protect"]))
+    if info.get("hole"):
+        files.append(("hole_mask.mov", info["hole"]))
     out = write_zip(p, p.out_name(x["c"]["base"], "视频生成素材"), files,
                     {"prompt.txt": ps.prompt, "workflow_api.json": json.dumps(graph, ensure_ascii=False, indent=1),
                      "说明.txt": README_VIDEO})
@@ -169,7 +177,9 @@ def export_result(p, r):
         refs = re.findall(r"Path\('([^']+)'\)", m.group(1)) if m else []
         prompt = txt.split("prompt:\n", 1)[1].rsplit("\nrefs:", 1)[0] if "prompt:\n" in txt else ""
         names = {"5": ("rough_cut.mp4", work / "h3_input.mp4"), "7": ("mask.mov", work / "h3_pixel_mask.mov"),
-                 "50": ("video1_guide.mp4", work / "guide.mp4"), "70": ("partial_mask.mov", work / "h3_partial_mask.mov")}
+                 "50": ("video1_guide.mp4", work / "guide.mp4"), "70": ("partial_mask.mov", work / "h3_partial_mask.mov"),
+                 "73": ("protect_mask.mov", work / "h3_protect_mask.mov"),
+                 "76": ("hole_mask.mov", work / "h3_hole_mask.mov")}
         for nid, node in g.items():                       # 工作流里上传到 ComfyUI 的文件名换成 zip 里的名字
             if node["class_type"] == "LoadVideo" and nid in names:
                 node["inputs"]["file"] = names[nid][0]
@@ -180,6 +190,9 @@ def export_result(p, r):
                 names[nid] = (nm, _find_ref(p, refs[k]))
         if "70" not in g:                                 # 没开主体重绘强度：没有这个文件
             names.pop("70")
+        for k in ("73", "76"):                            # 没开保护脸部
+            if k not in g:
+                names.pop(k)
         for nm, src in names.values():
             (files.append((nm, src)) if Path(src).exists() else missing.append(nm))
         texts = {"prompt.txt": prompt, "workflow_api.json": json.dumps(g, ensure_ascii=False, indent=1), "说明.txt": README_VIDEO + README_RESULT}

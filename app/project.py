@@ -586,11 +586,11 @@ class Project:
             return max(s, a) - a, min(e, b) - a
 
         def carry_files(o):
-            mid = o.get("mask")
-            if mid and mid not in done:
-                m = self.raw_masks_by_id(mid)[a:b + 1]
-                np.savez_compressed(md / f"{mid}.npz", shape=np.array(m.shape), bits=np.packbits(m))
-                done.add(mid)
+            for mid in (o.get("mask"), o.get("face_mask")):    # 遮罩、保护脸部识别出的脸：按帧切
+                if mid and mid not in done:
+                    m = self.raw_masks_by_id(mid)[a:b + 1]
+                    np.savez_compressed(md / f"{mid}.npz", shape=np.array(m.shape), bits=np.packbits(m))
+                    done.add(mid)
             aid = o.get("alpha")
             if aid and "alpha_" + aid not in done:
                 f = self.root / "masks" / f"alpha_{aid}.npz"

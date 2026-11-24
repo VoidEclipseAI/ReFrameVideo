@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 from comfy_api.latest import io
 
-from .h3_mask import frame_groups, map_masks, partial_cells
+from .h3_mask import drop_hole_cells, frame_groups, map_masks, partial_cells
 
 CELL = 32           # pixels per H3 token side (16x VAE downscale * 2x2 patch)
 PREVIEW_SCALE = 4   # preview is canvas / 4, so one cell = 8x8 preview pixels
@@ -93,6 +93,12 @@ class ReframeH3InpaintMask(io.ComfyNode):
                             "protect = keep it (the hole next to protected pixels may stay unfilled).",
                 ),
                 io.Mask.Input(
+                    "hole_mask", optional=True,
+                    tooltip="Optional. White = vacated area (grey in the rough cut). A cell holding any hole pixel, in any "
+                            "frame of its group, gets no protection, so protected pixels next to a hole do not keep the "
+                            "grey with them. Same frames and size as redraw_mask.",
+                ),
+                io.Mask.Input(
                     "partial_mask", optional=True,
                     tooltip="Optional. White = redraw partially (e.g. a moved subject that should take the new scene's "
                             "lighting but keep its shape). Cells holding any white pixel that are not fully repainted get "
@@ -117,7 +123,7 @@ class ReframeH3InpaintMask(io.ComfyNode):
 
     @classmethod
     def execute(cls, samples, vae, redraw_mask, conflict, protect_mask=None, partial_mask=None,
-                partial_strength=0.0) -> io.NodeOutput:
+                partial_strength=0.0, hole_mask=None) -> io.NodeOutput:
         redraw = binarize(redraw_mask, "redraw_mask")
         protect = torch.zeros_like(redraw) if protect_mask is None else binarize(protect_mask, "protect_mask")
         if protect.shape != redraw.shape:
@@ -137,6 +143,13 @@ class ReframeH3InpaintMask(io.ComfyNode):
                              f"needs [1, C, {expected[0]}, {expected[1]}, {expected[2]}]. "
                              "Encode exactly the video these masks were made for.")
 
+        hole_dropped = 0
+        if hole_mask is not None and protect_mask is not None:
+            hole = binarize(hole_mask, "hole_mask")
+            if hole.shape != redraw.shape:
+                raise ValueError(f"hole_mask {tuple(hole.shape)} and redraw_mask {tuple(redraw.shape)} "
+                                 "must have the same frames, height and width.")
+            protect, hole_dropped = drop_hole_cells(protect, hole, groups)
         latent_mask, actual, conflicts, stats = map_masks(redraw, protect, groups, CONFLICT[conflict])
         partial_view, partial_count = None, 0
         if partial_mask is not None and float(partial_strength or 0) > 0:
@@ -165,5 +178,6 @@ class ReframeH3InpaintMask(io.ComfyNode):
             "vae_geometry": geometry,
             "partial_strength": float(partial_strength or 0),
             "cells_partial": partial_count,
+            "protect_cells_dropped_for_hole": hole_dropped,
         }
         return io.NodeOutput(out, preview(actual, protect, conflicts, partial_view), json.dumps(report, indent=2))

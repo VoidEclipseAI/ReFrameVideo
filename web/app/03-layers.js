@@ -319,6 +319,7 @@ function renderProps() {
   $("#holeRectRange").value = hr;
   $("#holeRectVal").textContent = rectText(hr);
   $("#boxRedraw").checked = !!(o && o.box_redraw);
+  $("#faceProtect").checked = !!(o && o.face_protect && o.face_mask);
   $("#edgeFill").checked = !!(o && o.edge_fill);
   for (const [rid, vid, f, fmt] of CLEAN_UI) { const v = o ? +(o[f] || 0) : 0; $(rid).value = v; $(vid).textContent = fmt(v); }
   $("#holePrefill").checked = !!(o && o.hole_prefill);
@@ -520,6 +521,20 @@ bindSlider("#holeDilateRange", "#holeDilateVal", "hole_dilate", T("空区扩展 
 bindSlider("#holeTRange", "#holeTVal", "hole_t", T("空区帧间合并"), "", htText);
 bindSlider("#ringRange", "#ringVal", "ring_redraw", T("主体轮廓重绘"), "", ringText);
 for (const [rid, vid, f, fmt] of CLEAN_UI) bindSlider(rid, vid, f, { fill_holes: T("填充孔洞"), despeckle: T("去除杂点"), smooth_t: T("帧间平滑") }[f], "", fmt, true);   // 清理改的是蒙版本身：图片里也直接改视频
+// 保护脸部：没识别过脸的图层先交给 SAM 识别（服务端识别完就打开）；识别过的直接开 / 关
+$("#faceProtect").onchange = async () => {
+  const os = selected(), on = $("#faceProtect").checked;
+  if (!os.length) return;
+  const need = on ? os.filter((o) => !o.face_mask) : [];
+  const has = os.filter((o) => !need.includes(o));
+  if (has.length) editLayers(has, (o) => { o.face_protect = on || null; }, on ? T("保护脸部：开") : T("保护脸部：关"));
+  for (const o of need) {
+    try {
+      await api(`/api/p/${S.pid}/obj/${o.id}/face`, { json: {} });
+      await watchJob();
+    } catch (err) { setLog(err.message, true); $("#faceProtect").checked = false; }
+  }
+};
 $("#boxRedraw").onchange = () => {
   const os = selected(), on = $("#boxRedraw").checked;
   if (os.length) editLayers(os, (o) => { o.box_redraw = on || null; }, on ? T("边界框内重绘：开") : T("边界框内重绘：关"));
@@ -641,7 +656,7 @@ $("#opacity").onpointerdown = () => { const o = selected()[0]; if (o) S.dragBefo
 
 // ---------- 撤销 / 重做 ----------
 const snap = (o) => JSON.parse(JSON.stringify({ id: o.id, name: o.name, tf: o.tf, z: o.z, opacity: o.opacity, visible: o.visible, locked: o.locked, edge: o.edge || "sam", grow: o.grow ?? 0, box_ext: o.box_ext || null, ext_masks: o.ext_masks || null, keep_masks: o.keep_masks || null,
-  hole_rect: +(o.hole_rect || 0), hole_dilate: +(o.hole_dilate || 0), hole_t: +(o.hole_t || 0), ring_redraw: +(o.ring_redraw || 0), box_redraw: o.box_redraw || null, edge_fill: o.edge_fill || null, off: o.off || null,
+  hole_rect: +(o.hole_rect || 0), hole_dilate: +(o.hole_dilate || 0), hole_t: +(o.hole_t || 0), ring_redraw: +(o.ring_redraw || 0), box_redraw: o.box_redraw || null, edge_fill: o.edge_fill || null, off: o.off || null, face_protect: o.face_protect || null,
   fill_holes: +(o.fill_holes || 0), despeckle: +(o.despeckle || 0), smooth_t: +(o.smooth_t || 0), hole_prefill: o.hole_prefill || null }));
 function commit(os, fn, label, before = null) {   // 改图层：记录改之前的状态 → 改 → 存到服务器
   before = before || os.map(snap);

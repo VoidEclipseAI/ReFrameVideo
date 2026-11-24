@@ -1465,6 +1465,8 @@ class ComfyEngine:
         part = getattr(p, "partial", None)
         if part is not None:
             self._need_partial()
+        if info.get("hole"):
+            self._need_hole()
         if len(p.refs) > 9:
             log(f"  注意：H3 最多收 9 张参考图，后面 {len(p.refs) - 9} 张没发（提示词里的对应 Picture 编号会落空）")
         for k, frame in getattr(p, "pins", []):
@@ -1475,15 +1477,23 @@ class ComfyEngine:
         graph, out_node = self.build_h3_graph(self._upload(work / "h3_input.mp4"), self._upload(mpath), p.prompt,
                                               F, info["fps"], p.seed, refs, ref_video_names=vids,
                                               partial_name=self._upload(info["partial"]) if part is not None else None,
-                                              partial_strength=part[1] if part is not None else 0.0, pins=getattr(p, "pins", ()))
+                                              partial_strength=part[1] if part is not None else 0.0, pins=getattr(p, "pins", ()),
+                                              protect_name=self._upload(info["protect"]) if info.get("protect") else None,
+                                              hole_name=self._upload(info["hole"]) if info.get("hole") else None)
         (work / "comfy_graph.json").write_text(json.dumps(graph, ensure_ascii=False, indent=1), encoding="utf-8")
         self.write_inputs_used(work, graph, p, [f"重绘区像素数 {counts}",
                                                 f"原片 {n} 帧 → 补到 {F} 帧，{info['fps']} fps"]
-                               + ([f"主体重绘强度 {part[1]:.2f}：本体（保护蒙版除外）部分重绘（h3_partial_mask.mov）"] if part is not None else []))
+                               + ([f"主体重绘强度 {part[1]:.2f}：本体（保护蒙版除外）部分重绘（h3_partial_mask.mov）"] if part is not None else [])
+                               + (["保护脸部：含脸的格子不重绘（h3_protect_mask.mov，conflict=protect）；含空区的格子不保护（h3_hole_mask.mov）"] if info.get("protect") else []))
         first = self._download(self._run(graph, log), out_node, work)[0]
         if getattr(p, "pass2", None):
             return self.second_pass(p, work, meta, levels, first, log, ref_videos)
         return first
+
+    def _need_hole(self):
+        if not self.node_has_input(self.H3_MASK_NODE, "hole_mask"):
+            raise RuntimeError("「保护脸部」要新版节点包（1.2.0）：把本仓库 comfyui/ComfyUI-Reframe 整个文件夹覆盖拷到 ComfyUI 的 "
+                               "custom_nodes 下，重启 ComfyUI（或取消图层的「保护脸部」）")
 
     def _need_partial(self):
         if not self.node_has_input(self.H3_MASK_NODE, "partial_mask"):
@@ -1526,13 +1536,21 @@ class ComfyEngine:
             add_audio(work2 / "h3_input.mp4", p.audio, fps)
         mpath = write_pixel_mask(work2 / "h3_pixel_mask.mov", m.astype(np.uint8) * 255, fps)
         ppath = write_pixel_mask(work2 / "h3_partial_mask.mov", pm.astype(np.uint8) * 255, fps) if pm is not None else None
+        prot = getattr(p, "protect", None)                # 保护脸部：二采同样保护
+        fpath = write_pixel_mask(work2 / "h3_protect_mask.mov", pad(np.stack(
+            [cv2.resize(x.astype(np.uint8), (W2, H2), interpolation=cv2.INTER_NEAREST) for x in prot])) * 255, fps) if prot is not None else None
+        hole = getattr(p, "hole", None) if prot is not None else None
+        hpath = write_pixel_mask(work2 / "h3_hole_mask.mov", pad(np.stack(
+            [cv2.resize(x.astype(np.uint8), (W2, H2), interpolation=cv2.INTER_NEAREST) for x in hole])) * 255, fps) if hole is not None else None
         log(f"  二次采样：{W1}x{H1} → {W2}x{H2}，{F} 帧，重绘区 {m.mean() * 100:.0f}% 用一采结果当底、只在这里加噪，denoise {d}")
         refs = [self._upload(Path(r)) for r in p.refs[:9]]
         vids = [self._upload(Path(v)) for v in list(ref_videos)[:3]]
         graph, out_node = self.build_h3_graph(self._upload(work2 / "h3_input.mp4"), self._upload(mpath), p.prompt,
                                               F, fps, p.seed, refs, ref_video_names=vids, denoise=d,
                                               partial_name=self._upload(ppath) if ppath else None,
-                                              partial_strength=part[1] if ppath else 0.0, pins=getattr(p, "pins", ()))
+                                              partial_strength=part[1] if ppath else 0.0, pins=getattr(p, "pins", ()),
+                                              protect_name=self._upload(fpath) if fpath else None,
+                                              hole_name=self._upload(hpath) if hpath else None)
         (work2 / "comfy_graph.json").write_text(json.dumps(graph, ensure_ascii=False, indent=1), encoding="utf-8")
         self.write_inputs_used(work2, graph, p, [f"二次采样：一采 {W1}x{H1} → 二采 {W2}x{H2}，denoise {d}",
                                                  f"二采的底：重绘区 = 一采结果放大（{first.name}），其余 = 合成输入的高清像素"])
@@ -1604,6 +1622,14 @@ class ComfyEngine:
             pm = pad(rs(part[0])) & (pix == 0)
             info["partial"] = write_pixel_mask(work / "h3_partial_mask.mov", pm.astype(np.uint8) * 255, info["fps"])
             log(f"  主体重绘强度 {part[1]:.2f}：部分重绘的本体像素 {int(pm.sum())}（h3_partial_mask.mov）")
+        prot = getattr(p, "protect", None)
+        if prot is not None:                             # 保护脸部：节点按格换算，含这些像素的格子整格不重绘（conflict=protect）
+            pr = pad(rs(prot))
+            info["protect"] = write_pixel_mask(work / "h3_protect_mask.mov", pr.astype(np.uint8) * 255, info["fps"])
+            log(f"  保护脸部：{int(pr.sum())} 像素（h3_protect_mask.mov），含脸的格子不重绘")
+            hole = getattr(p, "hole", None)
+            if hole is not None:                         # 含空区的格子不保护（节点 hole_mask）
+                info["hole"] = write_pixel_mask(work / "h3_hole_mask.mov", pad(rs(hole)).astype(np.uint8) * 255, info["fps"])
         return info, mpath, counts
 
     # ---------- H3 局部重绘 ----------
@@ -1630,7 +1656,7 @@ class ComfyEngine:
     H3_MASK_NODE = "ReframeH3InpaintMask"   # 节点包 ComfyUI-Reframe（本仓库 comfyui/ComfyUI-Reframe，V3 写法，无第三方依赖）
 
     def build_h3_graph(self, video_name, mask_name, prompt, F, fps, seed, ref_names=(), ref_video_names=(), steps=None, check_nodes=True,
-                       denoise=1.0, partial_name=None, partial_strength=0.0, pins=()):
+                       denoise=1.0, partial_name=None, partial_strength=0.0, pins=(), protect_name=None, hole_name=None):
         """合成用的 H3 工作流：像素 mask → ReframeH3InpaintMask（按 H3 的 32px 格 / 时间组换算潜空间 mask，
         直接带在 latent 上）→ 采样 → 解码。画布 = h3_input.mp4 整幅。音频那一半取 ReferenceToVideo 的空音频。
         LoRA / 主模型照「视频生成」栏的设置（_apply_loras / self.unet）。
@@ -1659,8 +1685,16 @@ class ComfyEngine:
             pvid = node(71, "GetVideoComponents", video=[node(70, "LoadVideo", file=partial_name), 0])
             extra = dict(partial_mask=[node(72, "ImageToMask", image=[pvid, 0], channel="red"), 0],
                          partial_strength=round(float(partial_strength), 3))
+        conflict = "redraw"
+        if protect_name:                               # 保护脸部（2026-11-23）：含脸像素的格子整格不重绘
+            fvid = node(74, "GetVideoComponents", video=[node(73, "LoadVideo", file=protect_name), 0])
+            extra["protect_mask"] = [node(75, "ImageToMask", image=[fvid, 0], channel="red"), 0]
+            conflict = "protect"
+            if hole_name:                              # 含空区像素的格子不保护
+                hvid = node(77, "GetVideoComponents", video=[node(76, "LoadVideo", file=hole_name), 0])
+                extra["hole_mask"] = [node(78, "ImageToMask", image=[hvid, 0], channel="red"), 0]
         masked = node(42, self.H3_MASK_NODE, samples=[encoded, 0], vae=[vae, 0], redraw_mask=[redraw, 0],
-                      conflict="redraw", **extra)
+                      conflict=conflict, **extra)
         # 2026-11-10 去掉本体 mask（protect_mask）：conflict=redraw 时节点按格只看 redraw（final = r），本体 mask 从来不改结果；
         # 00ca / 592e 试验去掉后成片几乎一样（tests/简化/）。不重绘的地方本来就不在像素 mask 里（本体、保护蒙版都是 0）。
         r2v = dict(clip=[clip, 0], vae=[vae, 0], audio_vae=[avae, 0], prompt=prompt, width=[size, 0], height=[size, 1],

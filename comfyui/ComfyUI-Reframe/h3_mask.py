@@ -76,3 +76,20 @@ def partial_cells(partial, groups, strength, full_latent):
     only = (lat > 0) & (full_latent <= 0)
     merged = torch.where(only, torch.full_like(full_latent, float(strength)), full_latent)
     return merged, cells & ~(full_latent[:, ::2, ::2] > 0), int(only[:, ::2, ::2].sum())
+
+
+def drop_hole_cells(protect, hole, groups):
+    """Protect only where the hole is not: a cell (32x32 pixels over one temporal group) that holds any `hole`
+    pixel in any frame of its group gets no protection, so a protected face next to a vacated grey area is not
+    kept together with that grey. Returns (protect with those cells cleared, number of cells cleared)."""
+    if protect.shape != hole.shape or protect.ndim != 3:
+        raise ValueError("protect and hole masks must both be [frames,height,width] of the same size")
+    spatial_h = F.max_pool2d(hole.float().cpu()[:, None], 32, 32)[:, 0]
+    spatial_p = F.max_pool2d(protect.float().cpu()[:, None], 32, 32)[:, 0]
+    out, dropped = protect.clone(), 0
+    for s, e in groups:
+        bad = spatial_h[s:e].amax(0) > 0
+        dropped += int((bad & (spatial_p[s:e].amax(0) > 0)).sum())
+        pix = bad.float().repeat_interleave(32, 0).repeat_interleave(32, 1)
+        out[s:e] = out[s:e] * (1 - pix)
+    return out, dropped

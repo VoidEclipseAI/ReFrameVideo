@@ -602,4 +602,12 @@ window.UI_EN_MSGS = {
  "帧号 {0} 超出范围（0–{1}）": "Frame {0} is out of range (0–{1})",
  "帧号要是整数": "Frame number must be an integer",
  "{0}：按现在的图层摆放合成第 {1} 帧，按画框 {2}x{3}（位置 {4}, {5}）取…": "{0}: composited frame {1} with the current layer layout, framed {2}x{3} (position {4}, {5})…",
+ "  {0}：勾了保护脸部但还没识别脸，这次没保护（在图层的「保护脸部」重新勾一次）": "  {0}: Protect faces is on but no faces were detected yet, so nothing was protected this time (check Protect faces on the layer again)",
+ "  保护脸部（{0}）：{1} 帧有脸，含脸的 H3 格子不重绘": "  Protect faces ({0}): faces in {1} frames; H3 cells holding a face are not redrawn",
+ "  保护脸部：{0} 像素（h3_protect_mask.mov），含脸的格子不重绘": "  Protect faces: {0} pixels (h3_protect_mask.mov); cells holding a face are not redrawn",
+ "在「{0}」里识别脸（face）": "Detecting faces in “{0}”",
+ "这个图层里没有识别到脸": "No face detected in this layer",
+ "识别到 {0} 张脸，已打开「保护脸部」（{1} 帧有脸）": "Detected {0} faces; Protect faces is on (faces in {1} frames)",
+ "请选择人物图层": "Select a person layer",
+ "「保护脸部」要新版节点包（1.2.0）：把本仓库 comfyui/ComfyUI-Reframe 整个文件夹覆盖拷到 ComfyUI 的 custom_nodes 下，重启 ComfyUI（或取消图层的「保护脸部」）": "Protect faces needs the newer node pack (1.2.0): copy this repository's comfyui/ComfyUI-Reframe folder over the one in ComfyUI's custom_nodes and restart ComfyUI (or turn off Protect faces on the layer)",
 };

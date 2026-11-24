@@ -221,7 +221,7 @@ def start_job(fn, name=None, pid=None):
 
 # ---------- 项目 ----------
 
-API_VERSION = 259        # 前端会检查：服务端比页面旧时提示重启
+API_VERSION = 263        # 前端会检查：服务端比页面旧时提示重启
 
 
 @app.get("/api/info")
@@ -1914,6 +1914,44 @@ def segment_part(pid: str, oid: str, body: dict = Body(...)):
     return start_job(job, "从属图层识别", pid)
 
 
+@app.post("/api/p/{pid}/obj/{oid}/face")
+def segment_face(pid: str, oid: str):
+    """保护脸部（2026-11-23 用户定）：SAM 在这个图层里找「face」（和主体抠图拆分同一套：图层外涂灰），结果和图层遮罩相交，
+    存成 face_mask，同时打开 face_protect。生成时脸所在的 H3 格子整格不重绘（generate.face_protect）。"""
+    p = proj(pid)
+    o = p.obj(oid)
+    if o.get("shape") or o.get("prefill") or o.get("protect"):
+        raise HTTPException(400, "请选择人物图层")
+    vid, start, end = o["version"], o["start"], o["end"]
+
+    def job(log):
+        work = p.new_pass_dir()
+        log(f"在「{o['name']}」里识别脸（face）")
+        frames = p.frames(vid).copy()
+        layer = p.masks(oid, grow=0).copy()
+        frames[~layer] = 128
+        source = work / "face_input.mp4"
+        write_video(source, frames, p.data["fps"])
+        del frames
+        insts = ENGINE.segment(source, "face", start, end, p.data, work, log, filter_fragments=False)
+        with object_asset_lock(p, oid):
+            mask = np.zeros((p.data["n"], p.data["h"], p.data["w"]), bool)
+            for instance in insts:
+                mask |= instance
+            mask &= layer
+            mask[:start] = False
+            mask[end + 1:] = False
+            if not mask.any():
+                raise ValueError("这个图层里没有识别到脸")
+            current = p.obj(oid)
+            current["face_mask"] = p.save_masks(mask)
+            current["face_protect"] = True
+            p.data["rev"] = uuid.uuid4().hex[:6]
+            p.save()
+            log(f"识别到 {len(insts)} 张脸，已打开「保护脸部」（{int(mask.any(axis=(1, 2)).sum())} 帧有脸）")
+    return start_job(job, "识别脸部", pid)
+
+
 @app.delete("/api/p/{pid}/obj/{oid}")
 def delete_obj(pid: str, oid: str):
     p = proj(pid)
@@ -1981,6 +2019,7 @@ def _merge_finish(p, os_, top, no, alphas):
         if k not in ("name", "grow") and k in top:
             no[k] = json.loads(json.dumps(top[k]))
     no["grow"] = 0
+    no.pop("face_protect", None)                              # 脸是在原来的图层里识别的：合并后要重新识别
     tf = no.get("tf") or {}                                   # 外框中心从主图层的换成合并后的：t' = t + (I − A)(c − c')
     if not is_identity(tf):
         A = layer_matrix(dict(tf=tf, bbox=[0, 0, 0, 0]))[:, :2].astype(float)
@@ -2238,7 +2277,8 @@ async def set_frame_edits(pid: str, oid: str, i: int, request: Request):
     return o
 
 
-LAYER_FIELDS = ("name", "tf", "z", "opacity", "visible", "locked", "off", "edge", "grow", "box_ext", "ext_masks", "keep_masks", "hole_prefill") + MASK_OPTS + PROJ.CLEAN_OPTS
+LAYER_FIELDS = ("name", "tf", "z", "opacity", "visible", "locked", "off", "edge", "grow", "box_ext", "ext_masks", "keep_masks", "hole_prefill",
+                "face_protect") + MASK_OPTS + PROJ.CLEAN_OPTS
 
 
 @app.patch("/api/p/{pid}/obj/{oid}")
@@ -2425,10 +2465,17 @@ def set_trans(pid: str, body: dict = Body(...)):
     """过渡设置（H3 画布像素）：grow = 重绘区往外扩多少（0 = 不过渡），avoid = 离本体多远不扩。影响叠加层和生成。"""
     p = proj(pid)
     p.data.pop("trans_frac", None)                       # 旧的按比例过渡（11-04 上午），不用了
+    old = p.data.get("trans") or {}
     p.data["trans"] = {"grow": min(128, max(0, int(body.get("grow", 48)))), "avoid": min(128, max(-64, int(body.get("avoid", -16))))}
     if "frames" in body:
         p.data["trans"]["frames"] = min(16, max(0, int(body["frames"])))
         p.data["trans"]["blue"] = body.get("blue") is True
+    for k in ("edge_feather", "hole_feather"):           # 羽化（generate.feather_opts）：没传就留着原来的
+        if k in body or k in old:
+            p.data["trans"][k] = (body[k] is True) if k in body else old[k]
+    for k in ("edge_px", "hole_px"):
+        if k in body or k in old:
+            p.data["trans"][k] = min(128, max(1, int(body[k] if k in body else old[k])))
     p.save()
     return p.data["trans"]
 

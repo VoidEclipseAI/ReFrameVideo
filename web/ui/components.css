@@ -483,7 +483,7 @@ body:not([data-tab="video"]) #maskPanel .rg-video { display: none; }
 #refGenPanel .desc-head > span:first-child { color: var(--sub); font-size: 12px; }
 #refGenPanel #imgDesc { width: 100%; }
 #refGenPanel #imgBodyPartsRow[hidden] { display: none; }
-#refGenPanel .row[hidden] { display: none; }
+#refGenPanel .row[hidden] { display: none !important; }   /* 侧栏里更具体的 display 规则会盖掉 hidden（关键帧位置曾在首帧显示） */
 
 
 /* 图片结果：标题右边三个小图标按钮；候选上的「选用」只在悬停时出现（选用的那张一直显示 ✓ 已选用） */
@@ -1106,3 +1106,16 @@ body.gen-api #genFilesBtn, body.img-api #imgFilesBtn { display: none; }
 .busy-spin { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--line, rgba(128,128,128,.3)); border-top-color: var(--accent); animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .busy-spin { animation-duration: 2.4s; } }
+
+/* 数字框统一大小（2026-11-24）：右栏的数字框不再撑满整列。高度和同面板的下拉框一样（30），右对齐，按要填的位数定宽：
+   一般 64 px（帧号、像素、步数、强度），变换 / 画幅格子 72 px，Seed 112 px；主体扩绘区 / 局部保留列表里的小框和图层行的帧号框保持原来的紧凑样式。 */
+body #sidebar input[type="number"] { padding: 0 6px; text-align: right; }
+body #sidebar #propPanel .grid > label input[data-p],
+body #sidebar #framePanel .fr-grid label input[type="number"] { flex: none; width: 72px; }
+body #sidebar #genPanel .model-col > label > input[type="number"],
+body #sidebar #genPanel .lora-row input.lora-str,
+body #sidebar #refGenPanel #imgKeyFrame,
+body #sidebar #refGenPanel #imgCount { flex: none; width: 64px; justify-self: start; }
+body #sidebar #genPanel .model-col > .seed-row input,
+body #sidebar #refGenPanel .seed-row #imgSeed { flex: none; width: 112px; justify-self: start; }
+body #sidebar #layerList input.fr { min-height: 0; height: 20px; padding: 0 2px; font-size: 11px; text-align: center; }   /* 图层行的帧范围：原来被面板通用的 30 高撑大 */

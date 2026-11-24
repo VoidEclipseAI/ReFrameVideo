@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-reframe"
 description = "MiniMax H3 video inpainting helpers: the ReframeH3InpaintMask node turns pixel masks into the exact cell-level noise mask H3 uses, and the Reframe IO nodes (image, mask, text, number, video and output markers) let custom ComfyUI image and video workflows run from the ReFrame app."
-version = "1.1.0"
+version = "1.2.0"
 requires-python = ">=3.10"
 license = { text = "AGPL-3.0-only" }
 authors = [{ name = "VoidEclipseAI" }]
